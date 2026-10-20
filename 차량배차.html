@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 차량 배차 및 운행일지 관리 시스템</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    
+    /* 전체 기본 폰트 크기 확대 (rem 기준점 상향으로 앱 전체 텍스트 비례 확대) */
+    html { font-size: 17px; transition: font-size 0.15s ease; }
+    html.font-scale-normal { font-size: 16.5px; }
+    html.font-scale-large { font-size: 18px; }
+    html.font-scale-xlarge { font-size: 19.5px; }
+
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #f1f5f9; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .calendar-cell { min-height: 175px; transition: background-color 0.15s ease; }
+    .calendar-cell:hover { background-color: #f8fafc; }
+    
+    /* 커스텀 스크롤바 */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* A4 인쇄 전용 스타일 */
+    @media print {
+      html { font-size: 14px !important; }
+      body * { visibility: hidden; }
+      #printArea, #printArea * { visibility: visible; }
+      #printArea {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background: white !important;
+        box-shadow: none !important;
+      }
+      .no-print { display: none !important; }
+      table { page-break-inside: auto; width: 100%; border-collapse: collapse; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      thead { display: table-header-group; }
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased">
+
+  <!-- 상단 토스트 알림 컨테이너 -->
+  <div id="toastContainer" class="fixed top-4 right-4 z-[100] flex flex-col gap-2.5 pointer-events-none no-print"></div>
+
+  <div class="max-w-[1720px] mx-auto p-3 sm:p-6 no-print">
+    <!-- 상단 헤더 -->
+    <header class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 mb-6 flex flex-wrap justify-between items-center gap-4 border border-slate-200/80">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white text-2xl shadow-md shadow-blue-500/20">
+          <i class="fa-solid fa-car-side"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">실시간 차량 배차 관리 시스템</h1>
+          <p class="text-sm sm:text-base text-slate-600 mt-0.5 font-medium">운전자·동행자 배차 스케줄링 및 월간 운행내역 출력</p>
+        </div>
+      </div>
+
+      <!-- 우측 상태 및 도구 버튼 -->
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- 글자 크기 조절 토글 버튼 -->
+        <div class="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <span class="text-xs font-bold text-slate-600 px-2.5 flex items-center gap-1">
+            <i class="fa-solid fa-text-height text-blue-600"></i> 글자 크기
+          </span>
+          <button onclick="setFontScale('normal')" id="fontBtn-normal" class="font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900">
+            기본
+          </button>
+          <button onclick="setFontScale('large')" id="fontBtn-large" class="font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-white text-blue-600 shadow-2xs">
+            크게
+          </button>
+          <button onclick="setFontScale('xlarge')" id="fontBtn-xlarge" class="font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900">
+            아주 크게
+          </button>
+        </div>
+
+        <span id="syncStatus" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          실시간 저장 활성화됨
+        </span>
+        <button onclick="openReportModal()" class="inline-flex items-center gap-2 text-sm sm:text-base px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm transition cursor-pointer">
+          <i class="fa-solid fa-print"></i> 월별 배차 내역 출력 / 엑셀
+        </button>
+        <button onclick="openGuideModal()" class="inline-flex items-center gap-2 text-sm sm:text-base px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
+          <i class="fa-solid fa-database"></i> 연동 설정
+        </button>
+      </div>
+    </header>
+
+    <!-- 메인 레이아웃 (좌측 사이드바 + 우측 캘린더) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- 좌측 사이드바 (3칸): 팀원 관리, 차량 관리, 공유 메모장 -->
+      <div class="lg:col-span-3 space-y-6">
+        
+        <!-- 1. 팀원(운전자/동행자) 명단 관리 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80">
+          <div class="flex justify-between items-center mb-2.5">
+            <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+              <i class="fa-solid fa-users text-blue-600"></i> 팀원 명단 관리
+            </h2>
+            <span id="memberCount" class="text-sm bg-blue-50 text-blue-700 px-3 py-0.5 rounded-full font-extrabold">0명</span>
+          </div>
+          <p class="text-sm text-slate-600 mb-3.5 leading-snug">등록된 팀원은 배차 신청 시 <b>운전자</b> 또는 <b>동행자</b>로 빠르게 선택할 수 있습니다.</p>
+          
+          <div class="flex gap-2 mb-4">
+            <input type="text" id="newMemberInput" placeholder="이름 입력 (예: 김민수)" 
+              class="flex-1 text-base border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+              onkeydown="if(event.key==='Enter'){ event.preventDefault(); addMember(); }">
+            <button onclick="addMember()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition shrink-0 cursor-pointer">
+              추가
+            </button>
+          </div>
+          
+          <div id="memberList" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto pt-1">
+            <!-- 팀원 태그 동적 생성 -->
+          </div>
+        </div>
+
+        <!-- 2. 운행 차량 목록 관리 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80">
+          <div class="flex justify-between items-center mb-2.5">
+            <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+              <i class="fa-solid fa-van-shuttle text-emerald-600"></i> 운행 차량 목록
+            </h2>
+            <span id="vehicleCount" class="text-sm bg-emerald-50 text-emerald-700 px-3 py-0.5 rounded-full font-extrabold">0대</span>
+          </div>
+          <div class="flex gap-2 mb-4">
+            <input type="text" id="newVehicleInput" placeholder="차량명 (예: 1호차 레이)" 
+              class="flex-1 text-base border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              onkeydown="if(event.key==='Enter'){ event.preventDefault(); addVehicle(); }">
+            <button onclick="addVehicle()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition shrink-0 cursor-pointer">
+              추가
+            </button>
+          </div>
+          <div id="vehicleList" class="flex flex-wrap gap-2 max-h-40 overflow-y-auto pt-1">
+            <!-- 차량 태그 동적 생성 -->
+          </div>
+        </div>
+
+        <!-- 3. 실시간 팀 공유 메모장 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80 flex flex-col">
+          <div class="flex justify-between items-center mb-2">
+            <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+              <i class="fa-solid fa-note-sticky text-amber-500"></i> 실시간 공유 메모장
+            </h2>
+            <span id="memoSaveIndicator" class="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">자동 저장됨</span>
+          </div>
+          <p class="text-sm text-slate-600 mb-3.5 leading-snug">주유권 잔액, 하이패스, 차량 점검일 등 팀 전체 공지사항을 자유롭게 적어두세요.</p>
+          <textarea id="sharedMemo" rows="7" 
+            placeholder="여기에 입력한 내용은 모든 팀원에게 실시간으로 공유됩니다..."
+            class="w-full text-base bg-amber-50/70 border border-amber-300 rounded-xl p-4 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y leading-relaxed"
+            oninput="handleMemoInput()"></textarea>
+        </div>
+
+      </div>
+
+      <!-- 우측 메인 (9칸): 월별 배차 캘린더 -->
+      <div class="lg:col-span-9">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+          
+          <!-- 캘린더 상단 컨트롤 바 -->
+          <div class="p-4 sm:p-6 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4 bg-slate-50/40">
+            <!-- 월 이동 네비게이션 -->
+            <div class="flex items-center gap-2.5 sm:gap-3.5">
+              <button onclick="changeMonth(-1)" class="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-700 text-base shadow-2xs transition cursor-pointer" title="이전 달">
+                <i class="fa-solid fa-chevron-left"></i>
+              </button>
+              <h2 id="currentMonthTitle" class="text-xl sm:text-2xl font-extrabold text-slate-900 min-w-[140px] text-center">
+                2026년 10월
+              </h2>
+              <button onclick="changeMonth(1)" class="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-700 text-base shadow-2xs transition cursor-pointer" title="다음 달">
+                <i class="fa-solid fa-chevron-right"></i>
+              </button>
+              <button onclick="goToday()" class="ml-1 px-3.5 py-2 text-sm font-bold rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 shadow-2xs transition cursor-pointer">
+                오늘
+              </button>
+              <button onclick="openBookingModal(formatDate(new Date()))" class="px-4 py-2 text-sm font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition cursor-pointer flex items-center gap-1.5">
+                <i class="fa-solid fa-plus"></i> 빠른 배차 신청
+              </button>
+            </div>
+
+            <!-- 차량 필터 & 오전/오후 범례 -->
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="relative">
+                <select id="vehicleFilter" onchange="renderCalendar()" class="text-sm sm:text-base font-bold border border-slate-300 rounded-xl pl-3.5 pr-9 py-2 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                  <option value="ALL">🚗 전체 차량 보기</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-2.5 text-sm font-bold">
+                <span class="flex items-center gap-1.5 text-blue-800 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                  <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span> 오전(AM)
+                </span>
+                <span class="flex items-center gap-1.5 text-orange-800 bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-200">
+                  <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> 오후(PM)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 요일 헤더 -->
+          <div class="calendar-grid bg-slate-100/90 border-b border-slate-200 text-center py-3 text-sm sm:text-base font-extrabold text-slate-700">
+            <div class="text-red-500">일</div>
+            <div>월</div>
+            <div>화</div>
+            <div>수</div>
+            <div>목</div>
+            <div>금</div>
+            <div class="text-blue-600">토</div>
+          </div>
+
+          <!-- 달력 날짜 그리드 -->
+          <div id="calendarGrid" class="calendar-grid divide-x divide-y divide-slate-200">
+            <!-- JS로 렌더링 -->
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =================================================================
+       [모달 1] 배차 등록 / 수정 모달 (운전자 1명 + 동행자 다중 선택)
+       ================================================================= -->
+  <div id="bookingModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-200">
+      <div class="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+        <h3 id="modalTitle" class="font-extrabold text-xl text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-calendar-check text-blue-600"></i> 차량 배차 신청
+        </h3>
+        <button onclick="closeBookingModal()" class="text-slate-400 hover:text-slate-600 w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-200/60 transition cursor-pointer">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <form id="bookingForm" onsubmit="saveBooking(event)" class="p-6 space-y-5 max-h-[85vh] overflow-y-auto">
+        <input type="hidden" id="bookingId">
+        
+        <!-- 중복 경고 배너 (충돌 시 표시) -->
+        <div id="conflictBanner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-sm space-y-2.5">
+          <div class="font-extrabold flex items-center gap-1.5 text-amber-800 text-base">
+            <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> 동시간대 중복 배차 알림
+          </div>
+          <p id="conflictMessage" class="leading-relaxed"></p>
+          <div class="flex justify-end gap-2 pt-1">
+            <button type="button" onclick="hideConflictBanner()" class="px-3.5 py-2 rounded-lg bg-white border border-amber-300 text-slate-700 font-bold hover:bg-slate-50 cursor-pointer">시간 수정하기</button>
+            <button type="button" onclick="forceSaveBooking()" class="px-3.5 py-2 rounded-lg bg-amber-600 text-white font-bold hover:bg-amber-700 cursor-pointer">무시하고 등록</button>
+          </div>
+        </div>
+
+        <!-- 날짜 및 차량 선택 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-bold text-slate-700 mb-1.5">배차 일자</label>
+            <input type="date" id="bookingDate" required
+              class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-slate-700 mb-1.5">사용 차량</label>
+            <select id="bookingVehicle" required class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <!-- 동적 생성 -->
+            </select>
+          </div>
+        </div>
+
+        <!-- 운전자 선택 (1명) -->
+        <div>
+          <label class="block text-sm font-bold text-slate-700 mb-1.5">
+            <i class="fa-solid fa-id-card text-blue-600 mr-1"></i>운전자 선택 (필수)
+          </label>
+          <select id="bookingDriver" onchange="syncCompanionList()" required class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <!-- 동적 생성 -->
+          </select>
+        </div>
+
+        <!-- 동행자 다중 선택 + 직접 추가 -->
+        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/90">
+          <div class="flex justify-between items-center mb-2.5">
+            <label class="block text-sm font-bold text-slate-800">
+              <i class="fa-solid fa-user-plus text-indigo-600 mr-1"></i>동행자 선택 <span class="font-medium text-slate-500">(다중 선택 가능)</span>
+            </label>
+            <span id="selectedCompanionCount" class="text-xs font-extrabold text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-full">0명 선택됨</span>
+          </div>
+          
+          <!-- 팀원 체크박스 칩 영역 -->
+          <div id="companionCheckboxes" class="flex flex-wrap gap-2 mb-3 max-h-36 overflow-y-auto p-0.5">
+            <!-- JS로 렌더링 -->
+          </div>
+
+          <!-- 외부인/추가 동행자 직접 입력 -->
+          <input type="text" id="extraCompanions" placeholder="목록 외 동행자 직접 입력 (쉼표로 구분, 예: 실습생 김철수, 외부강사)" 
+            class="w-full text-sm border border-slate-300 bg-white rounded-xl px-3.5 py-2.5 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            oninput="updateCompanionCounter()">
+        </div>
+
+        <!-- 오전 / 오후 구분 -->
+        <div>
+          <label class="block text-sm font-bold text-slate-700 mb-1.5">오전 / 오후 구분</label>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="cursor-pointer">
+              <input type="radio" name="meridiem" value="AM" class="peer sr-only" checked onchange="updateDefaultTime('AM')">
+              <div class="text-center py-3 rounded-xl border border-slate-200 text-base font-extrabold text-slate-600 peer-checked:bg-blue-50 peer-checked:border-blue-500 peer-checked:text-blue-700 transition">
+                <i class="fa-regular fa-sun mr-1"></i> 오전 배차 (AM)
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="meridiem" value="PM" class="peer sr-only" onchange="updateDefaultTime('PM')">
+              <div class="text-center py-3 rounded-xl border border-slate-200 text-base font-extrabold text-slate-600 peer-checked:bg-orange-50 peer-checked:border-orange-500 peer-checked:text-orange-700 transition">
+                <i class="fa-solid fa-cloud-sun mr-1"></i> 오후 배차 (PM)
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 세부 출발 / 복귀 시간 입력 -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-bold text-slate-700 mb-1.5">출발 시간</label>
+            <input type="time" id="startTime" value="09:00" required
+              class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-slate-700 mb-1.5">복귀 예정 시간</label>
+            <input type="time" id="endTime" value="12:00" required
+              class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <!-- 일정별 메모 (행선지 및 용무) -->
+        <div>
+          <label class="block text-sm font-bold text-slate-700 mb-1.5">행선지 및 운행 용무 (메모)</label>
+          <input type="text" id="bookingMemo" placeholder="예: 전곡읍 가정방문, 군청 간담회 참석, 물품 수령 등" required
+            class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <!-- 하단 버튼 -->
+        <div class="flex justify-between items-center pt-4 border-t border-slate-200">
+          <div id="deleteConfirmArea" class="hidden items-center gap-2">
+            <span class="text-sm text-red-600 font-bold mr-1">정말 삭제할까요?</span>
+            <button type="button" onclick="confirmDeleteBooking()" class="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 cursor-pointer">예</button>
+            <button type="button" onclick="toggleDeleteConfirm(false)" class="px-3 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-300 cursor-pointer">아니오</button>
+          </div>
+          <button type="button" id="deleteBtn" onclick="toggleDeleteConfirm(true)" class="hidden px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold transition cursor-pointer">
+            <i class="fa-regular fa-trash-can mr-1"></i>배차 삭제
+          </button>
+
+          <div class="flex gap-2.5 ml-auto">
+            <button type="button" onclick="closeBookingModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm sm:text-base font-bold transition cursor-pointer">
+              취소
+            </button>
+            <button type="submit" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-extrabold shadow-sm transition cursor-pointer">
+              배차 저장하기
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =================================================================
+       [모달 2] 월별 배차 내역 보고서 & 인쇄 / 엑셀(CSV) 다운로드 모달
+       ================================================================= -->
+  <div id="reportModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-3 sm:p-6">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- 모달 상단 액션바 (인쇄 시 숨김) -->
+      <div class="px-6 py-4 bg-slate-800 text-white flex flex-wrap justify-between items-center gap-3 no-print">
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-file-invoice text-indigo-400 text-xl"></i>
+          <h3 class="font-extrabold text-lg sm:text-xl">월별 차량 배차 내역서 조회 및 출력</h3>
+        </div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button onclick="exportMonthlyCSV()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
+            <i class="fa-solid fa-file-excel"></i> 엑셀(CSV) 다운로드
+          </button>
+          <button onclick="window.print()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
+            <i class="fa-solid fa-print"></i> A4 인쇄 / PDF 저장
+          </button>
+          <button onclick="closeReportModal()" class="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 flex items-center justify-center transition cursor-pointer ml-1">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 필터 컨트롤 바 (인쇄 시 숨김) -->
+      <div class="px-6 py-3.5 bg-slate-100 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3 text-sm no-print">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="font-bold text-slate-700">조회 조건:</span>
+          <span id="reportFilterBadge" class="px-3 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-900"></span>
+          <span id="reportTotalCount" class="font-extrabold text-indigo-600">총 0건</span>
+        </div>
+        <p class="text-sm text-slate-600 font-medium">
+          <i class="fa-solid fa-circle-info mr-1 text-blue-600"></i>인쇄 버튼을 누르면 표 영역만 A4 규격에 맞춰 깔끔하게 출력됩니다.
+        </p>
+      </div>
+
+      <!-- 인쇄 영역 (#printArea) -->
+      <div id="printArea" class="p-6 sm:p-8 overflow-y-auto flex-1 bg-white">
+        <div class="text-center mb-6 border-b-2 border-slate-800 pb-4">
+          <h1 id="printDocTitle" class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">2026년 10월 차량 배차 및 운행 내역서</h1>
+          <p id="printDocSub" class="text-sm text-slate-600 mt-1.5 font-medium">출력일시: 2026-10-20 | 대상 차량: 전체 차량</p>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse border border-slate-300 text-sm sm:text-base">
+            <thead>
+              <tr class="bg-slate-100 text-slate-900 font-extrabold border-b border-slate-300">
+                <th class="border border-slate-300 px-3 py-3 text-center w-14">연번</th>
+                <th class="border border-slate-300 px-3 py-3 text-center w-32">운행일자</th>
+                <th class="border border-slate-300 px-3 py-3 text-center w-20">구분</th>
+                <th class="border border-slate-300 px-3 py-3 text-center w-32">운행시간</th>
+                <th class="border border-slate-300 px-3 py-3 w-44">차량명</th>
+                <th class="border border-slate-300 px-3 py-3 w-28 text-center">운전자</th>
+                <th class="border border-slate-300 px-3 py-3 w-48">동행자</th>
+                <th class="border border-slate-300 px-3 py-3">행선지 및 운행용무 (메모)</th>
+              </tr>
+            </thead>
+            <tbody id="reportTableBody" class="divide-y divide-slate-200 text-slate-800">
+              <!-- JS로 렌더링 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =================================================================
+       [모달 3] 외부 Firebase Realtime Database 연동 설정 모달
+       ================================================================= -->
+  <div id="guideModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-200 space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+        <h3 class="font-extrabold text-lg text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-fire text-amber-500"></i> Firebase 실시간 연동 상태 (jeung-car)
+        </h3>
+        <button onclick="closeGuideModal()" class="text-slate-400 hover:text-slate-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div class="text-sm text-slate-600 space-y-3 leading-relaxed">
+        <div class="p-3.5 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-200 font-bold text-xs sm:text-sm">
+          <i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>
+          <b>jeung-car</b> 프로젝트 설정 키가 코드에 내장되어 있습니다!
+        </div>
+
+        <p class="text-xs text-slate-500">
+          만약 Firebase 콘솔에서 <b>Realtime Database</b>를 싱가포르(asia-southeast1) 등 다른 리전에 생성하셨다면, 콘솔 상단에 표시된 데이터베이스 주소(`https://...`)를 아래에 붙여넣고 <b>[주소 저장 및 재연결]</b>을 눌러주세요.
+        </p>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1 text-xs">Realtime Database URL</label>
+          <input type="text" id="customDbUrl" placeholder="https://jeung-car-default-rtdb.firebaseio.com" 
+            class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <button type="button" onclick="fillPresetUrl('https://jeung-car-default-rtdb.firebaseio.com')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">
+              미국(기본) 주소 입력
+            </button>
+            <button type="button" onclick="fillPresetUrl('https://jeung-car-default-rtdb.asia-southeast1.firebasedatabase.app')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">
+              싱가포르(아시아) 주소 입력
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
+        <button onclick="closeGuideModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold cursor-pointer">닫기</button>
+        <button onclick="applyCustomFirebase()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold cursor-pointer">주소 저장 및 재연결</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Compat SDK (Realtime Database & Firestore 모두 지원) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <!-- 애플리케이션 메인 스크립트 -->
+  <script>
+    /********************************************************************
+     * [1] 사용자 FIREBASE 설정 (jeung-car 프로젝트 반영 완료)
+     ********************************************************************/
+    const DEFAULT_RTDB_URL = "https://jeung-car-default-rtdb.firebaseio.com";
+    const savedCustomUrl = localStorage.getItem('jeung_car_rtdb_url');
+
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyB9W85Bw8lauESJckXYE5dnX9cFywCsR2s",
+      authDomain: "jeung-car.firebaseapp.com",
+      databaseURL: savedCustomUrl || DEFAULT_RTDB_URL,
+      projectId: "jeung-car",
+      storageBucket: "jeung-car.firebasestorage.app",
+      messagingSenderId: "110252464817",
+      appId: "1:110252464817:web:4eac43891742f58e40a090",
+      measurementId: "G-HQJL11LKXJ"
+    };
+
+    const todayDate = new Date();
+    const yStr = todayDate.getFullYear();
+    const mStr = String(todayDate.getMonth() + 1).padStart(2, '0');
+    const dStr = String(todayDate.getDate()).padStart(2, '0');
+    const todayFormatted = `${yStr}-${mStr}-${dStr}`;
+
+    let state = {
+      members: ["김민수", "이영희", "박지훈", "최수진", "정다은", "강현우"],
+      vehicles: ["1호차 (레이 12가3456)", "2호차 (모닝 34나5678)", "3호차 (카니발 56다7890)"],
+      bookings: {
+        "sample_1": {
+          id: "sample_1",
+          date: todayFormatted,
+          vehicle: "1호차 (레이 12가3456)",
+          driver: "김민수",
+          companions: ["이영희", "박지훈"],
+          meridiem: "AM",
+          startTime: "09:30",
+          endTime: "11:30",
+          memo: "관내 사례관리 대상자 가정방문"
+        },
+        "sample_2": {
+          id: "sample_2",
+          date: todayFormatted,
+          vehicle: "3호차 (카니발 56다7890)",
+          driver: "최수진",
+          companions: ["정다은"],
+          meridiem: "PM",
+          startTime: "14:00",
+          endTime: "17:00",
+          memo: "유관기관 실무자 간담회 참석 및 후원물품 수령"
+        }
+      },
+      sharedMemo: "📌 [차량 이용 공지사항]\n1. 운행 후 차량 운행일지 서명 부탁드립니다.\n2. 주유카드는 각 차량 운전석 선바이저에 비치되어 있습니다.\n3. 동행자 탑승 시에도 안전벨트 착용 필수!\n4. 다음 사용자를 위해 하차 시 쓰레기를 꼭 수거해 주세요."
+    };
+
+    let currentDate = new Date();
+    let memoTimeout = null;
+    let pendingBookingData = null;
+
+    // Firebase 핸들러
+    let firebaseApp = null;
+    let rtdbRef = null;
+    let firestoreDocRef = null;
+    let activeSyncMode = 'LOCAL'; // 'RTDB' | 'FIRESTORE' | 'LOCAL'
+
+    /********************************************************************
+     * [1-2] 화면 글자 크기 배율 조절 기능 (기본 / 크게 / 아주 크게)
+     ********************************************************************/
+    let currentFontScale = 'large';
+
+    function setFontScale(scale) {
+      currentFontScale = scale;
+      const htmlEl = document.documentElement;
+      htmlEl.classList.remove('font-scale-normal', 'font-scale-large', 'font-scale-xlarge');
+      htmlEl.classList.add(`font-scale-${scale}`);
+
+      ['normal', 'large', 'xlarge'].forEach(key => {
+        const btn = document.getElementById(`fontBtn-${key}`);
+        if (!btn) return;
+        if (key === scale) {
+          btn.className = "font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer bg-white text-blue-600 shadow-2xs";
+        } else {
+          btn.className = "font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900";
+        }
+      });
+    }
+
+    /********************************************************************
+     * [2] 알림 토스트 유틸리티
+     ********************************************************************/
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const colorMap = {
+        info: 'bg-slate-800 text-white border-slate-700',
+        success: 'bg-emerald-600 text-white border-emerald-500',
+        warn: 'bg-amber-500 text-white border-amber-400',
+        error: 'bg-red-600 text-white border-red-500'
+      };
+      toast.className = `pointer-events-auto px-4 py-2.5 rounded-xl shadow-lg border text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all duration-300 ${colorMap[type] || colorMap.info}`;
+      toast.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 2600);
+    }
+
+    /********************************************************************
+     * [3] Firebase (jeung-car) 실시간 데이터베이스 연결 초기화
+     ********************************************************************/
+    function initDataSync() {
+      const statusBadge = document.getElementById('syncStatus');
+      document.getElementById('customDbUrl').value = FIREBASE_CONFIG.databaseURL;
+
+      // 로컬 백업 데이터 먼저 불러오기
+      const localSaved = localStorage.getItem('jeungCarDispatchBackup');
+      if (localSaved) {
+        try {
+          state = JSON.parse(localSaved);
+          renderAll(false);
+        } catch (e) {}
+      }
+
+      try {
+        firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+
+        // 1) Realtime Database 연결 시도
+        const db = firebase.database();
+        rtdbRef = db.ref('carDispatchApp');
+
+        // 실시간 연결 상태 감지
+        db.ref('.info/connected').on('value', (snap) => {
+          if (snap.val() === true) {
+            activeSyncMode = 'RTDB';
+            statusBadge.className = "inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200";
+            statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span> 실시간 동기화 중 (jeung-car)`;
+          }
+        });
+
+        rtdbRef.on('value', (snapshot) => {
+          const data = snapshot.val();
+          if (data) {
+            state.members = data.members || [];
+            state.vehicles = data.vehicles || [];
+            state.bookings = data.bookings || {};
+            state.sharedMemo = data.sharedMemo ?? "";
+            localStorage.setItem('jeungCarDispatchBackup', JSON.stringify(state));
+            renderAll(false);
+          } else {
+            // DB가 비어 있으면 초기 데이터를 업로드
+            rtdbRef.set(state);
+          }
+        }, (err) => {
+          console.warn("Realtime DB 읽기 오류 (Firestore 폴백 시도):", err);
+          initFirestoreFallback();
+        });
+
+      } catch (e) {
+        console.error("Firebase 초기화 오류:", e);
+        initFirestoreFallback();
+      }
+    }
+
+    // 만약 Realtime Database 대신 Firestore를 생성해 두셨을 경우 자동 호환
+    function initFirestoreFallback() {
+      if (!firebaseApp) return;
+      const statusBadge = document.getElementById('syncStatus');
+      try {
+        const fs = firebase.firestore();
+        firestoreDocRef = fs.collection('carDispatchApp').doc('mainState');
+        firestoreDocRef.onSnapshot((docSnap) => {
+          activeSyncMode = 'FIRESTORE';
+          statusBadge.className = "inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200";
+          statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span> 실시간 동기화 중 (jeung-car)`;
+
+          if (docSnap.exists) {
+            const data = docSnap.data();
+            state.members = data.members || [];
+            state.vehicles = data.vehicles || [];
+            state.bookings = data.bookings ? JSON.parse(data.bookings) : {};
+            state.sharedMemo = data.sharedMemo ?? "";
+            localStorage.setItem('jeungCarDispatchBackup', JSON.stringify(state));
+            renderAll(false);
+          } else {
+            saveToDataSource();
+          }
+        }, (err) => {
+          console.warn("Firestore 폴백 오류:", err);
+        });
+      } catch (e) {
+        console.warn("Firestore 초기화 실패:", e);
+      }
+    }
+
+    function saveToDataSource() {
+      localStorage.setItem('jeungCarDispatchBackup', JSON.stringify(state));
+      renderAll();
+
+      if (rtdbRef) {
+        rtdbRef.set(state).catch((err) => {
+          console.warn("RTDB 저장 실패:", err);
+        });
+      }
+
+      if (activeSyncMode === 'FIRESTORE' && firestoreDocRef) {
+        firestoreDocRef.set({
+          members: state.members,
+          vehicles: state.vehicles,
+          bookings: JSON.stringify(state.bookings || {}),
+          sharedMemo: state.sharedMemo || "",
+          updatedAt: Date.now()
+        }).catch((err) => {
+          console.warn("Firestore 저장 실패:", err);
+        });
+      }
+    }
+
+    function fillPresetUrl(url) {
+      document.getElementById('customDbUrl').value = url;
+    }
+
+    // 사용자 정의 Realtime Database URL 변경 및 즉시 재연결
+    function applyCustomFirebase() {
+      const dbUrl = document.getElementById('customDbUrl').value.trim();
+      if (!dbUrl) {
+        showToast('Realtime Database URL을 입력해 주세요.', 'warn');
+        return;
+      }
+      try {
+        localStorage.setItem('jeung_car_rtdb_url', dbUrl);
+        FIREBASE_CONFIG.databaseURL = dbUrl;
+
+        const customApp = firebase.initializeApp(FIREBASE_CONFIG, 'jeungCarApp_' + Date.now());
+        const customDb = customApp.database();
+        rtdbRef = customDb.ref('carDispatchApp');
+
+        rtdbRef.on('value', (snapshot) => {
+          const data = snapshot.val();
+          if (data) {
+            state.members = data.members || [];
+            state.vehicles = data.vehicles || [];
+            state.bookings = data.bookings || {};
+            state.sharedMemo = data.sharedMemo ?? "";
+            renderAll(false);
+          } else {
+            rtdbRef.set(state);
+          }
+        });
+
+        const statusBadge = document.getElementById('syncStatus');
+        statusBadge.className = "inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200";
+        statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span> 실시간 동기화 중 (jeung-car)`;
+
+        closeGuideModal();
+        showToast('새로운 데이터베이스 주소로 연결되었습니다!', 'success');
+      } catch (err) {
+        showToast('연결 중 오류가 발생했습니다. 주소를 확인해 주세요.', 'error');
+      }
+    }
+
+    /********************************************************************
+     * [4] 전체 화면 렌더링
+     ********************************************************************/
+    function renderAll(updateMemoField = true) {
+      renderMembers();
+      renderVehicles();
+      renderCalendar();
+      const memoEl = document.getElementById('sharedMemo');
+      if (updateMemoField || document.activeElement !== memoEl) {
+        memoEl.value = state.sharedMemo || "";
+      }
+    }
+
+    /********************************************************************
+     * [5] 팀원(운전자/동행자) 및 차량 관리
+     ********************************************************************/
+    function renderMembers() {
+      const container = document.getElementById('memberList');
+      document.getElementById('memberCount').textContent = `${state.members.length}명`;
+      if (state.members.length === 0) {
+        container.innerHTML = `<span class="text-sm text-slate-400 py-1">등록된 팀원이 없습니다.</span>`;
+        return;
+      }
+      container.innerHTML = state.members.map((name, idx) => `
+        <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-800 border border-slate-200">
+          <i class="fa-regular fa-user text-blue-600 text-xs"></i>${escapeHtml(name)}
+          <button onclick="removeMember(${idx})" class="text-slate-400 hover:text-red-500 transition cursor-pointer ml-0.5" title="삭제">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </span>
+      `).join('');
+    }
+
+    function addMember() {
+      const input = document.getElementById('newMemberInput');
+      const name = input.value.trim();
+      if (!name) return;
+      if (state.members.includes(name)) {
+        showToast('이미 등록된 팀원 이름입니다.', 'warn');
+        return;
+      }
+      state.members.push(name);
+      input.value = '';
+      saveToDataSource();
+      showToast(`'${name}' 팀원이 추가되었습니다.`, 'success');
+    }
+
+    function removeMember(index) {
+      const removed = state.members.splice(index, 1);
+      saveToDataSource();
+      showToast(`'${removed[0]}' 팀원이 삭제되었습니다.`);
+    }
+
+    function renderVehicles() {
+      const container = document.getElementById('vehicleList');
+      document.getElementById('vehicleCount').textContent = `${state.vehicles.length}대`;
+      if (state.vehicles.length === 0) {
+        container.innerHTML = `<span class="text-sm text-slate-400 py-1">등록된 차량이 없습니다.</span>`;
+      } else {
+        container.innerHTML = state.vehicles.map((v, idx) => `
+          <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-bold bg-emerald-50 text-emerald-900 border border-emerald-200">
+            <i class="fa-solid fa-car text-emerald-600 text-xs"></i>${escapeHtml(v)}
+            <button onclick="removeVehicle(${idx})" class="text-emerald-500 hover:text-red-500 transition cursor-pointer ml-0.5" title="삭제">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </span>
+        `).join('');
+      }
+
+      // 상단 필터 드롭다운 유지 업데이트
+      const filterSelect = document.getElementById('vehicleFilter');
+      const currentVal = filterSelect.value;
+      filterSelect.innerHTML = `<option value="ALL">🚗 전체 차량 보기</option>` +
+        state.vehicles.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+      if (state.vehicles.includes(currentVal)) filterSelect.value = currentVal;
+    }
+
+    function addVehicle() {
+      const input = document.getElementById('newVehicleInput');
+      const v = input.value.trim();
+      if (!v) return;
+      if (state.vehicles.includes(v)) {
+        showToast('이미 등록된 차량입니다.', 'warn');
+        return;
+      }
+      state.vehicles.push(v);
+      input.value = '';
+      saveToDataSource();
+      showToast(`'${v}' 차량이 추가되었습니다.`, 'success');
+    }
+
+    function removeVehicle(index) {
+      const removed = state.vehicles.splice(index, 1);
+      saveToDataSource();
+      showToast(`'${removed[0]}' 차량이 삭제되었습니다.`);
+    }
+
+    /********************************************************************
+     * [6] 공유 메모장 실시간 자동 저장
+     ********************************************************************/
+    function handleMemoInput() {
+      const indicator = document.getElementById('memoSaveIndicator');
+      indicator.textContent = "저장 중...";
+      indicator.className = "text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg";
+      clearTimeout(memoTimeout);
+      memoTimeout = setTimeout(() => {
+        state.sharedMemo = document.getElementById('sharedMemo').value;
+        saveToDataSource();
+        indicator.textContent = "자동 저장됨 ✓";
+        indicator.className = "text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg";
+      }, 450);
+    }
+
+    /********************************************************************
+     * [7] 월별 캘린더 렌더링 (운전자 + 동행자 배지 가독성 대폭 강화)
+     ********************************************************************/
+    function renderCalendar() {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      document.getElementById('currentMonthTitle').textContent = `${year}년 ${month + 1}월`;
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const lastDate = new Date(year, month + 1, 0).getDate();
+      const todayStr = formatDate(new Date());
+      const selectedVehicle = document.getElementById('vehicleFilter').value;
+
+      const bookingsArr = Object.values(state.bookings || {}).filter(b => {
+        return selectedVehicle === 'ALL' || b.vehicle === selectedVehicle;
+      });
+
+      const grid = document.getElementById('calendarGrid');
+      let html = '';
+
+      // 이전 달 빈 칸
+      for (let i = 0; i < firstDay; i++) {
+        html += `<div class="calendar-cell bg-slate-50/70 p-2.5"></div>`;
+      }
+
+      // 날짜 셀 렌더링
+      for (let day = 1; day <= lastDate; day++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dayOfWeek = (firstDay + day - 1) % 7;
+        const isToday = dateStr === todayStr;
+
+        const dayBookings = bookingsArr
+          .filter(b => b.date === dateStr)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+        const amBookings = dayBookings.filter(b => b.meridiem === 'AM');
+        const pmBookings = dayBookings.filter(b => b.meridiem === 'PM');
+
+        let dayColor = "text-slate-800";
+        if (dayOfWeek === 0) dayColor = "text-red-500";
+        if (dayOfWeek === 6) dayColor = "text-blue-600";
+
+        html += `
+          <div class="calendar-cell p-2.5 flex flex-col justify-between group relative ${isToday ? 'bg-blue-50/30' : 'bg-white'}">
+            <!-- 상단 날짜 및 +배차 버튼 -->
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-base sm:text-lg font-extrabold ${dayColor} ${isToday ? 'bg-blue-600 text-white px-2.5 py-0.5 rounded-full shadow-xs' : ''}">
+                ${day}
+              </span>
+              <button onclick="openBookingModal('${dateStr}')" 
+                class="opacity-90 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 text-xs font-bold bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-700 px-2.5 py-1 rounded-lg transition cursor-pointer">
+                + 배차
+              </button>
+            </div>
+
+            <!-- 오전 / 오후 배차 목록 -->
+            <div class="space-y-2 flex-1">
+              <div class="space-y-1.5">
+                ${amBookings.map(b => renderBookingBadge(b, 'AM')).join('')}
+              </div>
+              <div class="space-y-1.5">
+                ${pmBookings.map(b => renderBookingBadge(b, 'PM')).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 다음 달 빈 칸
+      const totalCells = firstDay + lastDate;
+      const remaining = (7 - (totalCells % 7)) % 7;
+      for (let i = 0; i < remaining; i++) {
+        html += `<div class="calendar-cell bg-slate-50/70 p-2.5"></div>`;
+      }
+
+      grid.innerHTML = html;
+    }
+
+    function renderBookingBadge(b, type) {
+      const isAM = type === 'AM';
+      const badgeStyle = isAM
+        ? 'bg-blue-50/95 hover:bg-blue-100/90 border-blue-200 text-blue-950'
+        : 'bg-orange-50/95 hover:bg-orange-100/90 border-orange-200 text-orange-950';
+      const tagColor = isAM ? 'bg-blue-600 text-white' : 'bg-orange-500 text-white';
+      const label = isAM ? '오전' : '오후';
+
+      // 운전자 호환 처리
+      const driverName = b.driver || b.member || '미지정';
+      const companions = Array.isArray(b.companions) ? b.companions : [];
+
+      let peopleLabel = `<span class="font-extrabold text-sm">${escapeHtml(driverName)}</span>`;
+      if (companions.length > 0) {
+        const companionNames = companions.map(escapeHtml).join(', ');
+        peopleLabel += ` <span class="inline-block text-xs font-bold text-indigo-800 bg-white/90 px-1.5 py-0.5 rounded-md border border-indigo-200" title="동행자: ${companionNames}">+동행 ${companions.length}명(${companionNames})</span>`;
+      }
+
+      return `
+        <div onclick="openBookingModal('${b.date}', '${b.id}')" 
+          class="cursor-pointer p-2.5 rounded-xl border text-xs sm:text-sm leading-snug transition shadow-2xs ${badgeStyle}">
+          <div class="flex items-center justify-between gap-1 mb-1">
+            <span class="inline-block px-2 py-0.5 rounded-md text-xs font-extrabold ${tagColor} shrink-0">${label}</span>
+            <span class="text-xs font-extrabold opacity-90 shrink-0">${b.startTime}~${b.endTime}</span>
+          </div>
+          <div class="my-1 leading-normal break-words">${peopleLabel}</div>
+          <div class="text-xs font-bold opacity-90 truncate mt-1"><i class="fa-solid fa-car-rear mr-1"></i>${escapeHtml(b.vehicle)}</div>
+          <div class="text-xs font-medium opacity-85 truncate mt-0.5"><i class="fa-regular fa-comment-dots mr-1"></i>${escapeHtml(b.memo)}</div>
+        </div>
+      `;
+    }
+
+    function changeMonth(delta) {
+      currentDate.setMonth(currentDate.getMonth() + delta);
+      renderCalendar();
+    }
+
+    function goToday() {
+      currentDate = new Date();
+      renderCalendar();
+    }
+
+    /********************************************************************
+     * [8] 배차 신청 / 수정 모달 (운전자 & 동행자 다중 선택)
+     ********************************************************************/
+    function openBookingModal(dateStr, bookingId = null) {
+      if (state.members.length === 0) {
+        showToast('좌측에서 팀원 이름을 먼저 1명 이상 등록해 주세요.', 'warn');
+        return;
+      }
+      if (state.vehicles.length === 0) {
+        showToast('좌측에서 운행 차량을 먼저 1대 이상 등록해 주세요.', 'warn');
+        return;
+      }
+
+      hideConflictBanner();
+      toggleDeleteConfirm(false);
+
+      // 차량 및 운전자 옵션 렌더링
+      document.getElementById('bookingVehicle').innerHTML = state.vehicles
+        .map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+      document.getElementById('bookingDriver').innerHTML = state.members
+        .map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+
+      const deleteBtn = document.getElementById('deleteBtn');
+      const modalTitle = document.getElementById('modalTitle');
+
+      if (bookingId && state.bookings[bookingId]) {
+        const b = state.bookings[bookingId];
+        const driverName = b.driver || b.member || state.members[0];
+        const savedCompanions = Array.isArray(b.companions) ? b.companions : [];
+
+        // 팀원 명단에 있는 동행자와 직접 입력한 외부 동행자 분리
+        const memberCompanions = savedCompanions.filter(c => state.members.includes(c));
+        const customCompanions = savedCompanions.filter(c => !state.members.includes(c));
+
+        modalTitle.innerHTML = `<i class="fa-solid fa-pen-to-square text-blue-600"></i> 배차 내역 확인 및 수정`;
+        document.getElementById('bookingId').value = b.id;
+        document.getElementById('bookingDate').value = b.date;
+        document.getElementById('bookingVehicle').value = b.vehicle;
+        document.getElementById('bookingDriver').value = driverName;
+        document.querySelector(`input[name="meridiem"][value="${b.meridiem}"]`).checked = true;
+        document.getElementById('startTime').value = b.startTime;
+        document.getElementById('endTime').value = b.endTime;
+        document.getElementById('bookingMemo').value = b.memo;
+        document.getElementById('extraCompanions').value = customCompanions.join(', ');
+
+        renderCompanionCheckboxes(driverName, memberCompanions);
+        deleteBtn.classList.remove('hidden');
+      } else {
+        modalTitle.innerHTML = `<i class="fa-solid fa-calendar-plus text-blue-600"></i> 새 차량 배차 신청`;
+        document.getElementById('bookingId').value = '';
+        document.getElementById('bookingDate').value = dateStr;
+
+        // 상단 필터에서 특정 차량을 보고 있었다면 기본 선택
+        const currentVehicleFilter = document.getElementById('vehicleFilter').value;
+        if (currentVehicleFilter !== 'ALL') {
+          document.getElementById('bookingVehicle').value = currentVehicleFilter;
+        }
+
+        const defaultDriver = state.members[0];
+        document.getElementById('bookingDriver').value = defaultDriver;
+        document.querySelector('input[name="meridiem"][value="AM"]').checked = true;
+        updateDefaultTime('AM');
+        document.getElementById('bookingMemo').value = '';
+        document.getElementById('extraCompanions').value = '';
+
+        renderCompanionCheckboxes(defaultDriver, []);
+        deleteBtn.classList.add('hidden');
+      }
+
+      const modal = document.getElementById('bookingModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    // 운전자 변경 시 동행자 체크박스 갱신 (운전자 본인은 동행자에서 자동 제외)
+    function syncCompanionList() {
+      const currentDriver = document.getElementById('bookingDriver').value;
+      const currentlyChecked = Array.from(document.querySelectorAll('input[name="companionItem"]:checked'))
+        .map(el => el.value)
+        .filter(val => val !== currentDriver);
+      renderCompanionCheckboxes(currentDriver, currentlyChecked);
+    }
+
+    function renderCompanionCheckboxes(driverName, selectedList = []) {
+      const container = document.getElementById('companionCheckboxes');
+      const availableMembers = state.members.filter(m => m !== driverName);
+
+      if (availableMembers.length === 0) {
+        container.innerHTML = `<span class="text-sm text-slate-400">선택 가능한 다른 팀원이 없습니다. 아래 입력란에 동행자를 직접 입력할 수 있습니다.</span>`;
+        updateCompanionCounter();
+        return;
+      }
+
+      container.innerHTML = availableMembers.map(m => {
+        const isChecked = selectedList.includes(m) ? 'checked' : '';
+        return `
+          <label class="cursor-pointer select-none">
+            <input type="checkbox" name="companionItem" value="${escapeHtml(m)}" class="peer sr-only" ${isChecked} onchange="updateCompanionCounter()">
+            <span class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-bold border border-slate-300 bg-white text-slate-700 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 transition">
+              <i class="fa-solid fa-check text-xs"></i> ${escapeHtml(m)}
+            </span>
+          </label>
+        `;
+      }).join('');
+
+      updateCompanionCounter();
+    }
+
+    function updateCompanionCounter() {
+      const checkedCount = document.querySelectorAll('input[name="companionItem"]:checked').length;
+      const extraRaw = document.getElementById('extraCompanions').value.trim();
+      const extraList = extraRaw ? extraRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const total = checkedCount + extraList.length;
+      document.getElementById('selectedCompanionCount').textContent = `${total}명 선택됨`;
+    }
+
+    function closeBookingModal() {
+      const modal = document.getElementById('bookingModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function updateDefaultTime(meridiem) {
+      if (meridiem === 'AM') {
+        document.getElementById('startTime').value = '09:00';
+        document.getElementById('endTime').value = '12:00';
+      } else {
+        document.getElementById('startTime').value = '13:30';
+        document.getElementById('endTime').value = '17:30';
+      }
+    }
+
+    function saveBooking(e) {
+      e.preventDefault();
+      const id = document.getElementById('bookingId').value || 'bk_' + Date.now();
+      const date = document.getElementById('bookingDate').value;
+      const vehicle = document.getElementById('bookingVehicle').value;
+      const driver = document.getElementById('bookingDriver').value;
+      const meridiem = document.querySelector('input[name="meridiem"]:checked').value;
+      const startTime = document.getElementById('startTime').value;
+      const endTime = document.getElementById('endTime').value;
+      const memo = document.getElementById('bookingMemo').value.trim();
+
+      // 체크된 동행자 + 직접 입력한 동행자 합치기
+      const checkedCompanions = Array.from(document.querySelectorAll('input[name="companionItem"]:checked')).map(el => el.value);
+      const extraRaw = document.getElementById('extraCompanions').value.trim();
+      const extraCompanions = extraRaw ? extraRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const companions = [...new Set([...checkedCompanions, ...extraCompanions])];
+
+      const newBooking = { id, date, vehicle, driver, companions, meridiem, startTime, endTime, memo };
+
+      // 동시간대 동일 차량 중복 배차 체크
+      const conflict = Object.values(state.bookings || {}).find(b => {
+        if (b.id === id || b.date !== date || b.vehicle !== vehicle) return false;
+        return (startTime < b.endTime && endTime > b.startTime);
+      });
+
+      if (conflict) {
+        pendingBookingData = newBooking;
+        const conflictDriver = conflict.driver || conflict.member;
+        document.getElementById('conflictMessage').innerHTML =
+          `선택하신 <b>[${escapeHtml(vehicle)}]</b> 차량은 해당 시간대(<b>${conflict.startTime}~${conflict.endTime}</b>)에 이미 <b>'${escapeHtml(conflictDriver)}'</b>님의 배차가 등록되어 있습니다. 그래도 등록하시겠습니까?`;
+        document.getElementById('conflictBanner').classList.remove('hidden');
+        return;
+      }
+
+      commitBookingSave(newBooking);
+    }
+
+    function forceSaveBooking() {
+      if (pendingBookingData) {
+        commitBookingSave(pendingBookingData);
+        pendingBookingData = null;
+      }
+    }
+
+    function hideConflictBanner() {
+      document.getElementById('conflictBanner').classList.add('hidden');
+      pendingBookingData = null;
+    }
+
+    function commitBookingSave(bookingObj) {
+      if (!state.bookings) state.bookings = {};
+      state.bookings[bookingObj.id] = bookingObj;
+      saveToDataSource();
+      closeBookingModal();
+      showToast('배차 일정이 저장되었습니다.', 'success');
+    }
+
+    function toggleDeleteConfirm(show) {
+      const confirmArea = document.getElementById('deleteConfirmArea');
+      const deleteBtn = document.getElementById('deleteBtn');
+      if (show) {
+        confirmArea.classList.remove('hidden');
+        confirmArea.classList.add('flex');
+        deleteBtn.classList.add('hidden');
+      } else {
+        confirmArea.classList.add('hidden');
+        confirmArea.classList.remove('flex');
+        if (document.getElementById('bookingId').value) {
+          deleteBtn.classList.remove('hidden');
+        }
+      }
+    }
+
+    function confirmDeleteBooking() {
+      const id = document.getElementById('bookingId').value;
+      if (!id || !state.bookings[id]) return;
+      delete state.bookings[id];
+      saveToDataSource();
+      closeBookingModal();
+      showToast('배차 일정이 삭제되었습니다.');
+    }
+
+    /********************************************************************
+     * [9] 월별 배차 내역서 조회 / A4 인쇄 / 엑셀(CSV) 다운로드
+     ********************************************************************/
+    function getFilteredMonthlyBookings() {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const yearMonthPrefix = `${year}-${month}`;
+      const selectedVehicle = document.getElementById('vehicleFilter').value;
+
+      return Object.values(state.bookings || {})
+        .filter(b => {
+          const matchMonth = b.date && b.date.startsWith(yearMonthPrefix);
+          const matchVehicle = selectedVehicle === 'ALL' || b.vehicle === selectedVehicle;
+          return matchMonth && matchVehicle;
+        })
+        .sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          return a.startTime.localeCompare(b.startTime);
+        });
+    }
+
+    function openReportModal() {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const selectedVehicle = document.getElementById('vehicleFilter').value;
+      const vehicleLabel = selectedVehicle === 'ALL' ? '전체 차량' : selectedVehicle;
+
+      const list = getFilteredMonthlyBookings();
+
+      document.getElementById('reportFilterBadge').textContent = `${year}년 ${month}월 · ${vehicleLabel}`;
+      document.getElementById('reportTotalCount').textContent = `총 ${list.length}건`;
+      document.getElementById('printDocTitle').textContent = `${year}년 ${month}월 차량 배차 및 운행 내역서`;
+      document.getElementById('printDocSub').textContent = `출력일: ${formatDate(new Date())} | 대상 차량: ${vehicleLabel} | 총 배차 건수: ${list.length}건`;
+
+      const tbody = document.getElementById('reportTableBody');
+      if (list.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="border border-slate-300 py-10 text-center text-slate-400 font-medium">
+              해당 월에 등록된 차량 배차 내역이 없습니다.
+            </td>
+          </tr>
+        `;
+      } else {
+        tbody.innerHTML = list.map((b, idx) => {
+          const driverName = b.driver || b.member || '-';
+          const companions = Array.isArray(b.companions) && b.companions.length > 0
+            ? b.companions.join(', ')
+            : '-';
+          const meridiemLabel = b.meridiem === 'AM' ? '오전' : '오후';
+          const meridiemBadge = b.meridiem === 'AM'
+            ? 'text-blue-700 bg-blue-50 border-blue-200'
+            : 'text-orange-700 bg-orange-50 border-orange-200';
+
+          return `
+            <tr class="hover:bg-slate-50">
+              <td class="border border-slate-300 px-3 py-2 text-center font-medium">${idx + 1}</td>
+              <td class="border border-slate-300 px-3 py-2 text-center font-semibold">${escapeHtml(b.date)}</td>
+              <td class="border border-slate-300 px-3 py-2 text-center">
+                <span class="inline-block px-2 py-0.5 rounded text-xs font-bold border ${meridiemBadge}">${meridiemLabel}</span>
+              </td>
+              <td class="border border-slate-300 px-3 py-2 text-center font-medium">${escapeHtml(b.startTime)} ~ ${escapeHtml(b.endTime)}</td>
+              <td class="border border-slate-300 px-3 py-2 font-semibold">${escapeHtml(b.vehicle)}</td>
+              <td class="border border-slate-300 px-3 py-2 text-center font-bold text-slate-900">${escapeHtml(driverName)}</td>
+              <td class="border border-slate-300 px-3 py-2 text-slate-700">${escapeHtml(companions)}</td>
+              <td class="border border-slate-300 px-3 py-2">${escapeHtml(b.memo)}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      const modal = document.getElementById('reportModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeReportModal() {
+      const modal = document.getElementById('reportModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    // 엑셀(CSV, UTF-8 BOM 포함) 파일 다운로드
+    function exportMonthlyCSV() {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const list = getFilteredMonthlyBookings();
+
+      if (list.length === 0) {
+        showToast('출력할 월별 배차 내역이 없습니다.', 'warn');
+        return;
+      }
+
+      const headers = ['연번', '운행일자', '오전/오후', '출발시간', '복귀시간', '사용차량', '운전자', '동행자', '동행인원(명)', '행선지 및 운행용무'];
+      const rows = list.map((b, idx) => {
+        const driverName = b.driver || b.member || '';
+        const companionsArr = Array.isArray(b.companions) ? b.companions : [];
+        const companionsStr = companionsArr.join(', ');
+        const meridiemStr = b.meridiem === 'AM' ? '오전' : '오후';
+
+        return [
+          idx + 1,
+          b.date,
+          meridiemStr,
+          b.startTime,
+          b.endTime,
+          b.vehicle,
+          driverName,
+          companionsStr,
+          companionsArr.length,
+          b.memo
+        ].map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(',');
+      });
+
+      // 한글 깨짐 방지를 위한 UTF-8 BOM(\uFEFF) 추가
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `차량배차내역_${year}년_${month}월.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToast(`${year}년 ${month}월 배차 내역 엑셀(CSV) 파일이 다운로드되었습니다.`, 'success');
+    }
+
+    /********************************************************************
+     * [10] 기타 모달 및 보조 함수
+     ********************************************************************/
+    function openGuideModal() {
+      const m = document.getElementById('guideModal');
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+
+    function closeGuideModal() {
+      const m = document.getElementById('guideModal');
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+    }
+
+    function formatDate(d) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // 전역 스코프에 이벤트 핸들러 바인딩
+    Object.assign(window, {
+      setFontScale,
+      addMember, removeMember,
+      addVehicle, removeVehicle,
+      handleMemoInput,
+      changeMonth, goToday, renderCalendar,
+      openBookingModal, closeBookingModal,
+      syncCompanionList, updateCompanionCounter,
+      updateDefaultTime, saveBooking,
+      forceSaveBooking, hideConflictBanner,
+      toggleDeleteConfirm, confirmDeleteBooking,
+      openReportModal, closeReportModal, exportMonthlyCSV,
+      openGuideModal, closeGuideModal, applyCustomFirebase, fillPresetUrl,
+      formatDate
+    });
+
+    // 초기 실행
+    setFontScale('large');
+    renderAll();
+    initDataSync();
+  </script>
+</body>
+</html>
