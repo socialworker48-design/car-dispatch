@@ -1,34 +1,98 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="font-scale-normal">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 차량 배차 및 운행일지 관리 시스템</title>
+  <title>연천군정신건강복지센터 통합 관리 시스템 (연가·차량배차)</title>
+
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- FontAwesome Icons -->
+  <!-- FullCalendar Core & Locales (연가 관리용) -->
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/locales-all.global.min.js"></script>
+  <!-- FontAwesome Icons (차량 배차 및 공통 아이콘용) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+
   <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-    
-    /* 전체 기본 폰트 크기 확대 (rem 기준점 상향으로 앱 전체 텍스트 비례 확대) */
-    html { font-size: 17px; transition: font-size 0.15s ease; }
-    html.font-scale-normal { font-size: 16.5px; }
-    html.font-scale-large { font-size: 18px; }
-    html.font-scale-xlarge { font-size: 19.5px; }
 
-    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #f1f5f9; }
+    /* 글자 크기 조절 배율 */
+    html { font-size: 16px; transition: font-size 0.15s ease; }
+    html.font-scale-normal { font-size: 16px; }
+    html.font-scale-large { font-size: 17.5px; }
+    html.font-scale-xlarge { font-size: 19px; }
+
+    body {
+      font-family: 'Pretendard', 'Noto Sans KR', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #f1f5f9;
+    }
+
+    /* 차량 배차 달력 그리드 스타일 */
     .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
     .calendar-cell { min-height: 175px; transition: background-color 0.15s ease; }
     .calendar-cell:hover { background-color: #f8fafc; }
-    
+
+    /* 연가 관리 FullCalendar 커스텀 스타일 */
+    .fc-event {
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .fc .fc-button-primary {
+      background-color: #4f46e5 !important;
+      border-color: #4f46e5 !important;
+      border-radius: 0.5rem !important;
+      font-weight: 600 !important;
+    }
+    .fc .fc-button-primary:hover {
+      background-color: #4338ca !important;
+      border-color: #4338ca !important;
+    }
+    .fc .fc-toolbar-title {
+      font-size: 1.25rem !important;
+      font-weight: 700 !important;
+      color: #1f2937;
+    }
+    .fc-daygrid-day {
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+    .fc-daygrid-day:hover {
+      background-color: #f8fafc;
+    }
+
+    /* 하단 토스트 메시지 (연가용 호환) */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background-color: #1f2937;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 10px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 9999;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
     /* 커스텀 스크롤바 */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-    /* A4 인쇄 전용 스타일 */
+    /* A4 인쇄 전용 스타일 (차량 배차 월별 내역서 출력용) */
     @media print {
       html { font-size: 14px !important; }
       body * { visibility: hidden; }
@@ -50,446 +114,1319 @@
     }
   </style>
 </head>
-<body class="text-slate-800 antialiased">
+<body class="text-slate-800 antialiased min-h-screen">
 
-  <!-- 상단 토스트 알림 컨테이너 -->
-  <div id="toastContainer" class="fixed top-4 right-4 z-[100] flex flex-col gap-2.5 pointer-events-none no-print"></div>
+  <!-- 상단 토스트 알림 컨테이너 (차량 배차용) -->
+  <div id="toastContainer" class="fixed top-16 right-4 z-[100] flex flex-col gap-2.5 pointer-events-none no-print"></div>
+  <!-- 하단 토스트 알림 (연가 관리용) -->
+  <div id="toast" class="toast no-print">메시지</div>
 
-  <div class="max-w-[1720px] mx-auto p-3 sm:p-6 no-print">
-    <!-- 상단 헤더 -->
-    <header class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 mb-6 flex flex-wrap justify-between items-center gap-4 border border-slate-200/80">
-      <div class="flex items-center gap-4">
-        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white text-2xl shadow-md shadow-blue-500/20">
-          <i class="fa-solid fa-car-side"></i>
+  <!-- =================================================================
+       최상단 통합 탭 네비게이션 바
+       ================================================================= -->
+  <nav class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs no-print">
+    <div class="max-w-[1720px] mx-auto px-4 sm:px-6 h-16 flex flex-wrap items-center justify-between gap-3">
+      <!-- 좌측 기관 로고 및 타이틀 -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-white font-extrabold shadow-xs">
+          YC
         </div>
         <div>
-          <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">실시간 차량 배차 관리 시스템</h1>
-          <p class="text-sm sm:text-base text-slate-600 mt-0.5 font-medium">운전자·동행자 배차 스케줄링 및 월간 운행내역 출력</p>
+          <span class="font-extrabold text-slate-900 text-base sm:text-lg tracking-tight">연천군정신건강복지센터</span>
+          <span class="hidden sm:inline-block text-xs text-slate-500 ml-2 font-medium">Since 1995 | 통합 업무 시스템</span>
         </div>
       </div>
 
-      <!-- 우측 상태 및 도구 버튼 -->
-      <div class="flex flex-wrap items-center gap-3">
-        <!-- 글자 크기 조절 토글 버튼 -->
-        <div class="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-          <span class="text-xs font-bold text-slate-600 px-2.5 flex items-center gap-1">
+      <!-- 중앙/우측 탭 전환 버튼 & 글자 크기 컨트롤 -->
+      <div class="flex items-center gap-2 sm:gap-4">
+        <div class="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <button id="tabBtn-leave" onclick="switchMainTab('leave')"
+            class="px-4 py-2 rounded-lg text-sm font-extrabold transition flex items-center gap-2 cursor-pointer bg-indigo-600 text-white shadow-xs">
+            <i class="fa-regular fa-calendar-check"></i> 연가 및 근무 관리
+          </button>
+          <button id="tabBtn-car" onclick="switchMainTab('car')"
+            class="px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 cursor-pointer text-slate-600 hover:text-slate-900">
+            <i class="fa-solid fa-car-side"></i> 차량 배차 관리
+          </button>
+        </div>
+
+        <!-- 공통 글자 크기 조절 버튼 -->
+        <div class="hidden md:inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <span class="text-xs font-bold text-slate-600 px-2 flex items-center gap-1">
             <i class="fa-solid fa-text-height text-blue-600"></i> 글자 크기
           </span>
-          <button onclick="setFontScale('normal')" id="fontBtn-normal" class="font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900">
+          <button onclick="setFontScale('normal')" id="fontBtn-normal" class="font-scale-btn px-2 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer bg-white text-blue-600 shadow-2xs">
             기본
           </button>
-          <button onclick="setFontScale('large')" id="fontBtn-large" class="font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-white text-blue-600 shadow-2xs">
+          <button onclick="setFontScale('large')" id="fontBtn-large" class="font-scale-btn px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900">
             크게
           </button>
-          <button onclick="setFontScale('xlarge')" id="fontBtn-xlarge" class="font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900">
+          <button onclick="setFontScale('xlarge')" id="fontBtn-xlarge" class="font-scale-btn px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900">
             아주 크게
           </button>
         </div>
-
-        <span id="syncStatus" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          실시간 저장 활성화됨
-        </span>
-        <button onclick="openReportModal()" class="inline-flex items-center gap-2 text-sm sm:text-base px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm transition cursor-pointer">
-          <i class="fa-solid fa-print"></i> 월별 배차 내역 출력 / 엑셀
-        </button>
-        <button onclick="openGuideModal()" class="inline-flex items-center gap-2 text-sm sm:text-base px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
-          <i class="fa-solid fa-database"></i> 연동 설정
-        </button>
       </div>
-    </header>
+    </div>
+  </nav>
 
-    <!-- 메인 레이아웃 (좌측 사이드바 + 우측 캘린더) -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      
-      <!-- 좌측 사이드바 (3칸): 팀원 관리, 차량 관리, 공유 메모장 -->
-      <div class="lg:col-span-3 space-y-6">
-        
-        <!-- 1. 팀원(운전자/동행자) 명단 관리 -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80">
-          <div class="flex justify-between items-center mb-2.5">
-            <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
-              <i class="fa-solid fa-users text-blue-600"></i> 팀원 명단 관리
-            </h2>
-            <span id="memberCount" class="text-sm bg-blue-50 text-blue-700 px-3 py-0.5 rounded-full font-extrabold">0명</span>
-          </div>
-          <p class="text-sm text-slate-600 mb-3.5 leading-snug">등록된 팀원은 배차 신청 시 <b>운전자</b> 또는 <b>동행자</b>로 빠르게 선택할 수 있습니다.</p>
-          
-          <div class="flex gap-2 mb-4">
-            <input type="text" id="newMemberInput" placeholder="이름 입력 (예: 김민수)" 
-              class="flex-1 text-base border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-              onkeydown="if(event.key==='Enter'){ event.preventDefault(); addMember(); }">
-            <button onclick="addMember()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition shrink-0 cursor-pointer">
-              추가
-            </button>
-          </div>
-          
-          <div id="memberList" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto pt-1">
-            <!-- 팀원 태그 동적 생성 -->
-          </div>
+  <!-- =================================================================
+       [탭 1] 연가 및 근무 관리 섹션 (yeoncheon-leave 연결)
+       ================================================================= -->
+  <section id="section-leave" class="p-4 md:p-6 no-print">
+    <div class="max-w-6xl mx-auto">
+      <!-- 헤더 영역 -->
+      <div class="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-2">
+        <div>
+          <h1 class="text-2xl md:text-3xl font-bold text-gray-800">연천군정신건강복지센터 연가 관리</h1>
+          <p class="text-gray-500 mt-1 text-sm md:text-base">Since 1995 | 실시간 클라우드 동기화 됨 (yeoncheon-leave)</p>
         </div>
-
-        <!-- 2. 운행 차량 목록 관리 -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80">
-          <div class="flex justify-between items-center mb-2.5">
-            <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
-              <i class="fa-solid fa-van-shuttle text-emerald-600"></i> 운행 차량 목록
-            </h2>
-            <span id="vehicleCount" class="text-sm bg-emerald-50 text-emerald-700 px-3 py-0.5 rounded-full font-extrabold">0대</span>
-          </div>
-          <div class="flex gap-2 mb-4">
-            <input type="text" id="newVehicleInput" placeholder="차량명 (예: 1호차 레이)" 
-              class="flex-1 text-base border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-              onkeydown="if(event.key==='Enter'){ event.preventDefault(); addVehicle(); }">
-            <button onclick="addVehicle()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition shrink-0 cursor-pointer">
-              추가
-            </button>
-          </div>
-          <div id="vehicleList" class="flex flex-wrap gap-2 max-h-40 overflow-y-auto pt-1">
-            <!-- 차량 태그 동적 생성 -->
-          </div>
+        <div class="flex flex-wrap gap-2 text-xs text-gray-600 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+          <span class="font-semibold text-gray-700">구분 안내:</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span>연가(차감)</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>공가(미차감)</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>대체휴무(미차감)</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block"></span>비공식 연가(미차감)</span>
         </div>
-
-        <!-- 3. 실시간 팀 공유 메모장 -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80 flex flex-col">
-          <div class="flex justify-between items-center mb-2">
-            <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
-              <i class="fa-solid fa-note-sticky text-amber-500"></i> 실시간 공유 메모장
-            </h2>
-            <span id="memoSaveIndicator" class="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">자동 저장됨</span>
-          </div>
-          <p class="text-sm text-slate-600 mb-3.5 leading-snug">주유권 잔액, 하이패스, 차량 점검일 등 팀 전체 공지사항을 자유롭게 적어두세요.</p>
-          <textarea id="sharedMemo" rows="7" 
-            placeholder="여기에 입력한 내용은 모든 팀원에게 실시간으로 공유됩니다..."
-            class="w-full text-base bg-amber-50/70 border border-amber-300 rounded-xl p-4 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y leading-relaxed"
-            oninput="handleMemoInput()"></textarea>
-        </div>
-
       </div>
 
-      <!-- 우측 메인 (9칸): 월별 배차 캘린더 -->
-      <div class="lg:col-span-9">
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
-          
-          <!-- 캘린더 상단 컨트롤 바 -->
-          <div class="p-4 sm:p-6 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4 bg-slate-50/40">
-            <!-- 월 이동 네비게이션 -->
-            <div class="flex items-center gap-2.5 sm:gap-3.5">
-              <button onclick="changeMonth(-1)" class="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-700 text-base shadow-2xs transition cursor-pointer" title="이전 달">
-                <i class="fa-solid fa-chevron-left"></i>
-              </button>
-              <h2 id="currentMonthTitle" class="text-xl sm:text-2xl font-extrabold text-slate-900 min-w-[140px] text-center">
-                2026년 10월
-              </h2>
-              <button onclick="changeMonth(1)" class="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-700 text-base shadow-2xs transition cursor-pointer" title="다음 달">
-                <i class="fa-solid fa-chevron-right"></i>
-              </button>
-              <button onclick="goToday()" class="ml-1 px-3.5 py-2 text-sm font-bold rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 shadow-2xs transition cursor-pointer">
-                오늘
-              </button>
-              <button onclick="openBookingModal(formatDate(new Date()))" class="px-4 py-2 text-sm font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition cursor-pointer flex items-center gap-1.5">
-                <i class="fa-solid fa-plus"></i> 빠른 배차 신청
-              </button>
+      <!-- 연가 공지 및 공유 메모장 영역 -->
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-lg font-bold text-gray-700 flex items-center">
+            <svg class="w-5 h-5 mr-2 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"></path>
+              <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"></path>
+            </svg>
+            연가 공유 메모장 (공지사항)
+          </h2>
+          <button onclick="saveMemo()" class="text-sm bg-yellow-100 text-yellow-800 px-3.5 py-1.5 rounded-lg hover:bg-yellow-200 font-bold transition cursor-pointer">
+            메모 저장하기
+          </button>
+        </div>
+        <textarea id="leaveSharedMemo" class="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-yellow-400 min-h-[80px] resize-y text-sm text-gray-700" placeholder="직원들과 공유할 연가 관련 메모나 공지사항을 입력하세요. 저장하면 다른 PC에서도 즉시 보입니다."></textarea>
+      </div>
+
+      <!-- 메인 그리드: 신규 직원 등록 & 직원별 연가 현황 -->
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+        <!-- 직원 등록 폼 -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit lg:col-span-1">
+          <h2 class="text-xl font-bold mb-4 text-gray-700">신규 직원 등록</h2>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">이름</label>
+              <input type="text" id="empName" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-400 text-sm" placeholder="홍길동">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">총 연가 (일)</label>
+                <input type="number" id="empTotalDays" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-400 text-sm" min="0" value="15">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">추가 (시간)</label>
+                <input type="number" id="empTotalHours" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-400 text-sm" min="0" max="7" value="0">
+              </div>
+            </div>
+            <button onclick="addEmployee()" class="w-full bg-blue-600 text-white font-bold py-2.5 rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer">
+              등록하기
+            </button>
+          </div>
+        </div>
+
+        <!-- 연가 현황 테이블 -->
+        <div class="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
+            <h2 class="text-xl font-bold text-gray-700">직원별 연가 현황</h2>
+            <span class="text-xs text-gray-500">* 직원 이름 또는 하단 달력의 날짜를 클릭하면 연가/공가/대체휴무/비공식 연가를 등록할 수 있습니다.</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-gray-50 border-b border-gray-200">
+                  <th class="p-3 text-sm font-semibold text-gray-600 whitespace-nowrap">이름</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 whitespace-nowrap">총 연가</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 whitespace-nowrap">사용 연가 (차감)</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 whitespace-nowrap">잔여 연가</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 whitespace-nowrap">기타 (미차감 누적)</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 text-center whitespace-nowrap">관리</th>
+                </tr>
+              </thead>
+              <tbody id="employeeTableBody">
+                <!-- 데이터 렌더링 영역 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 연가 캘린더 영역 -->
+      <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-10">
+        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-3">
+          <div>
+            <h2 class="text-xl font-bold text-gray-700">전체 연가 및 근무 일정표</h2>
+            <p class="text-xs text-indigo-600 font-medium mt-1">* 달력의 날짜 칸을 클릭(또는 드래그)하면 해당 날짜로 바로 연가/일정을 입력할 수 있습니다.</p>
+          </div>
+          <!-- 색상 범례 (Legend) -->
+          <div class="flex flex-wrap items-center gap-3 text-xs font-medium">
+            <span class="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md border border-indigo-200">
+              <span class="w-3 h-3 rounded-sm bg-[#4f46e5] inline-block"></span> 연가 (차감)
+            </span>
+            <span class="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md border border-emerald-200">
+              <span class="w-3 h-3 rounded-sm bg-[#10b981] inline-block"></span> 공가 (미차감)
+            </span>
+            <span class="flex items-center gap-1.5 bg-amber-50 text-amber-700 px-2.5 py-1 rounded-md border border-amber-200">
+              <span class="w-3 h-3 rounded-sm bg-[#f59e0b] inline-block"></span> 대체휴무 (미차감)
+            </span>
+            <span class="flex items-center gap-1.5 bg-purple-50 text-purple-700 px-2.5 py-1 rounded-md border border-purple-200">
+              <span class="w-3 h-3 rounded-sm bg-[#8b5cf6] inline-block"></span> 비공식 연가 (미차감)
+            </span>
+          </div>
+        </div>
+        <div id="calendar" class="min-h-[550px]"></div>
+      </div>
+    </div>
+
+    <!-- 개별 연가 사용 내역 모달창 -->
+    <div id="leaveModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[95vh] flex flex-col">
+        <div class="p-5 border-b flex justify-between items-center gap-3">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-xl font-bold text-gray-800"><span id="modalEmpName"></span> 선생님 일정 및 연가 내역</h2>
+            </div>
+            <p class="text-xs text-gray-500 mt-0.5">공가, 대체휴무, 비공식 연가는 잔여 연가 시간에서 차감되지 않습니다.</p>
+          </div>
+          <button onclick="closeModal()" class="text-gray-400 hover:text-gray-700 text-2xl font-bold px-2 cursor-pointer">&times;</button>
+        </div>
+
+        <div class="p-5 overflow-y-auto flex-1">
+          <!-- 등록/수정 입력 폼 -->
+          <div class="bg-gray-50 p-4 rounded-xl mb-6 border border-gray-200">
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-bold text-sm text-gray-700" id="formTitle">새 일정/연가 등록</h3>
+              <span id="deductNotice" class="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">공식 연가 차감됨</span>
             </div>
 
-            <!-- 차량 필터 & 오전/오후 범례 -->
-            <div class="flex flex-wrap items-center gap-3">
-              <div class="relative">
-                <select id="vehicleFilter" onchange="renderCalendar()" class="text-sm sm:text-base font-bold border border-slate-300 rounded-xl pl-3.5 pr-9 py-2 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                  <option value="ALL">🚗 전체 차량 보기</option>
+            <div class="flex flex-col gap-4">
+              <!-- 대상 직원 선택 영역 -->
+              <div class="flex flex-col sm:flex-row sm:items-center gap-2 pb-3 border-b border-gray-200">
+                <label class="text-xs font-semibold text-gray-600 sm:w-24">대상 직원 선택</label>
+                <select id="modalEmpSelect" onchange="changeModalEmployee(this.value)" class="flex-1 border border-gray-300 rounded-lg p-2 text-sm font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                  <!-- 직원 목록 동적 생성 -->
                 </select>
               </div>
-              <div class="flex items-center gap-2.5 text-sm font-bold">
-                <span class="flex items-center gap-1.5 text-blue-800 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
-                  <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span> 오전(AM)
-                </span>
-                <span class="flex items-center gap-1.5 text-orange-800 bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-200">
-                  <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> 오후(PM)
-                </span>
+
+              <!-- 1열: 구분 선택 및 시작일 ~ 종료일 -->
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                <div class="sm:col-span-4">
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">구분 (유형)</label>
+                  <select id="leaveType" onchange="updateDeductNotice()" class="w-full border border-gray-300 rounded-lg p-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                    <option value="연가">연가 (연가 차감)</option>
+                    <option value="공가">공가 (미차감)</option>
+                    <option value="대체휴무">대체휴무 (미차감)</option>
+                    <option value="비공식 연가">비공식 연가 (미차감)</option>
+                  </select>
+                </div>
+                <div class="sm:col-span-8 flex items-center gap-2">
+                  <div class="flex-1">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">시작일</label>
+                    <input type="date" id="startDate" class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                  </div>
+                  <span class="pt-5 text-gray-500 font-bold">~</span>
+                  <div class="flex-1">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">종료일</label>
+                    <input type="date" id="endDate" class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2열: 시간 선택 영역 (일 / 시간 / 분) 및 버튼 -->
+              <div class="grid grid-cols-3 sm:grid-cols-5 gap-3 items-end">
+                <div class="col-span-1">
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">일(Day)</label>
+                  <select id="useDays" class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                    <option value="0">0일</option>
+                    <option value="1">1일</option>
+                    <option value="2">2일</option>
+                    <option value="3">3일</option>
+                    <option value="4">4일</option>
+                    <option value="5">5일</option>
+                    <option value="6">6일</option>
+                    <option value="7">7일</option>
+                    <option value="8">8일</option>
+                    <option value="9">9일</option>
+                    <option value="10">10일</option>
+                    <option value="11">11일</option>
+                    <option value="12">12일</option>
+                    <option value="13">13일</option>
+                    <option value="14">14일</option>
+                    <option value="15">15일</option>
+                  </select>
+                </div>
+                <div class="col-span-1">
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">시간(Hour)</label>
+                  <select id="useHours" class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                    <option value="0">0시간</option>
+                    <option value="1">1시간</option>
+                    <option value="2">2시간</option>
+                    <option value="3">3시간</option>
+                    <option value="4">4시간</option>
+                    <option value="5">5시간</option>
+                    <option value="6">6시간</option>
+                    <option value="7">7시간</option>
+                    <option value="8">8시간</option>
+                  </select>
+                </div>
+                <div class="col-span-1">
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">분(Min)</label>
+                  <select id="useMins" class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                    <option value="0">00분</option>
+                    <option value="30">30분</option>
+                  </select>
+                </div>
+                <div class="col-span-3 sm:col-span-2 flex gap-2">
+                  <button onclick="saveLeaveRecord()" id="saveRecordBtn" class="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg hover:bg-indigo-700 text-sm transition cursor-pointer">등록</button>
+                  <button onclick="cancelEdit()" id="cancelEditBtn" class="hidden flex-1 bg-gray-500 text-white font-bold py-2 rounded-lg hover:bg-gray-600 text-sm transition cursor-pointer">취소</button>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 요일 헤더 -->
-          <div class="calendar-grid bg-slate-100/90 border-b border-slate-200 text-center py-3 text-sm sm:text-base font-extrabold text-slate-700">
-            <div class="text-red-500">일</div>
-            <div>월</div>
-            <div>화</div>
-            <div>수</div>
-            <div>목</div>
-            <div>금</div>
-            <div class="text-blue-600">토</div>
+          <!-- 내역 리스트 -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr class="bg-gray-100 border-b border-gray-200">
+                  <th class="p-2.5 font-semibold text-gray-600 whitespace-nowrap">구분</th>
+                  <th class="p-2.5 font-semibold text-gray-600 whitespace-nowrap">사용 기간/날짜</th>
+                  <th class="p-2.5 font-semibold text-gray-600 whitespace-nowrap">시간 (차감 여부)</th>
+                  <th class="p-2.5 font-semibold text-gray-600 text-right whitespace-nowrap">관리</th>
+                </tr>
+              </thead>
+              <tbody id="recordTableBody">
+                <!-- 내역 렌더링 영역 -->
+              </tbody>
+            </table>
           </div>
-
-          <!-- 달력 날짜 그리드 -->
-          <div id="calendarGrid" class="calendar-grid divide-x divide-y divide-slate-200">
-            <!-- JS로 렌더링 -->
-          </div>
-
         </div>
       </div>
-
     </div>
-  </div>
+
+    <!-- 연가 삭제 확인 모달창 -->
+    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-[60] p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+        <h3 class="text-lg font-bold text-gray-800 mb-2">삭제 확인</h3>
+        <p id="confirmMessage" class="text-sm text-gray-600 mb-6"></p>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeConfirmModal()" class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm font-medium transition cursor-pointer">취소</button>
+          <button id="confirmActionBtn" class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-bold transition cursor-pointer">삭제</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- =================================================================
-       [모달 1] 배차 등록 / 수정 모달 (운전자 1명 + 동행자 다중 선택)
+       [탭 2] 실시간 차량 배차 관리 섹션 (jeung-car 연결)
        ================================================================= -->
-  <div id="bookingModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4 no-print">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-200">
-      <div class="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-        <h3 id="modalTitle" class="font-extrabold text-xl text-slate-900 flex items-center gap-2">
-          <i class="fa-solid fa-calendar-check text-blue-600"></i> 차량 배차 신청
-        </h3>
-        <button onclick="closeBookingModal()" class="text-slate-400 hover:text-slate-600 w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-200/60 transition cursor-pointer">
-          <i class="fa-solid fa-xmark text-xl"></i>
-        </button>
-      </div>
-
-      <form id="bookingForm" onsubmit="saveBooking(event)" class="p-6 space-y-5 max-h-[85vh] overflow-y-auto">
-        <input type="hidden" id="bookingId">
-        
-        <!-- 중복 경고 배너 (충돌 시 표시) -->
-        <div id="conflictBanner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-sm space-y-2.5">
-          <div class="font-extrabold flex items-center gap-1.5 text-amber-800 text-base">
-            <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> 동시간대 중복 배차 알림
+  <section id="section-car" class="hidden">
+    <div class="max-w-[1720px] mx-auto p-3 sm:p-6 no-print">
+      <!-- 상단 헤더 -->
+      <header class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 mb-6 flex flex-wrap justify-between items-center gap-4 border border-slate-200/80">
+        <div class="flex items-center gap-4">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white text-2xl shadow-md shadow-blue-500/20">
+            <i class="fa-solid fa-car-side"></i>
           </div>
-          <p id="conflictMessage" class="leading-relaxed"></p>
-          <div class="flex justify-end gap-2 pt-1">
-            <button type="button" onclick="hideConflictBanner()" class="px-3.5 py-2 rounded-lg bg-white border border-amber-300 text-slate-700 font-bold hover:bg-slate-50 cursor-pointer">시간 수정하기</button>
-            <button type="button" onclick="forceSaveBooking()" class="px-3.5 py-2 rounded-lg bg-amber-600 text-white font-bold hover:bg-amber-700 cursor-pointer">무시하고 등록</button>
+          <div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">실시간 차량 배차 관리 시스템</h1>
+            <p class="text-sm sm:text-base text-slate-600 mt-0.5 font-medium">운전자·동행자 배차 스케줄링 및 월간 운행내역 출력</p>
           </div>
         </div>
 
-        <!-- 날짜 및 차량 선택 -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-bold text-slate-700 mb-1.5">배차 일자</label>
-            <input type="date" id="bookingDate" required
-              class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <!-- 우측 상태 및 도구 버튼 -->
+        <div class="flex flex-wrap items-center gap-3">
+          <span id="syncStatus" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            실시간 저장 활성화됨
+          </span>
+          <button onclick="openReportModal()" class="inline-flex items-center gap-2 text-sm sm:text-base px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm transition cursor-pointer">
+            <i class="fa-solid fa-print"></i> 월별 배차 내역 출력 / 엑셀
+          </button>
+          <button onclick="openGuideModal()" class="inline-flex items-center gap-2 text-sm sm:text-base px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
+            <i class="fa-solid fa-database"></i> 연동 설정
+          </button>
+        </div>
+      </header>
+
+      <!-- 메인 레이아웃 (좌측 사이드바 + 우측 캘린더) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- 좌측 사이드바 (3칸): 팀원 관리, 차량 관리, 공유 메모장 -->
+        <div class="lg:col-span-3 space-y-6">
+          <!-- 1. 팀원(운전자/동행자) 명단 관리 -->
+          <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80">
+            <div class="flex justify-between items-center mb-2.5">
+              <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+                <i class="fa-solid fa-users text-blue-600"></i> 팀원 명단 관리
+              </h2>
+              <span id="memberCount" class="text-sm bg-blue-50 text-blue-700 px-3 py-0.5 rounded-full font-extrabold">0명</span>
+            </div>
+            <p class="text-sm text-slate-600 mb-3.5 leading-snug">등록된 팀원은 배차 신청 시 <b>운전자</b> 또는 <b>동행자</b>로 빠르게 선택할 수 있습니다.</p>
+
+            <div class="flex gap-2 mb-4">
+              <input type="text" id="newMemberInput" placeholder="이름 입력 (예: 김민수)"
+                class="flex-1 text-base border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                onkeydown="if(event.key==='Enter'){ event.preventDefault(); addMember(); }">
+              <button onclick="addMember()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition shrink-0 cursor-pointer">
+                추가
+              </button>
+            </div>
+
+            <div id="memberList" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto pt-1">
+              <!-- 팀원 태그 동적 생성 -->
+            </div>
           </div>
+
+          <!-- 2. 운행 차량 목록 관리 -->
+          <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80">
+            <div class="flex justify-between items-center mb-2.5">
+              <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+                <i class="fa-solid fa-van-shuttle text-emerald-600"></i> 운행 차량 목록
+              </h2>
+              <span id="vehicleCount" class="text-sm bg-emerald-50 text-emerald-700 px-3 py-0.5 rounded-full font-extrabold">0대</span>
+            </div>
+            <div class="flex gap-2 mb-4">
+              <input type="text" id="newVehicleInput" placeholder="차량명 (예: 1호차 레이)"
+                class="flex-1 text-base border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                onkeydown="if(event.key==='Enter'){ event.preventDefault(); addVehicle(); }">
+              <button onclick="addVehicle()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition shrink-0 cursor-pointer">
+                추가
+              </button>
+            </div>
+            <div id="vehicleList" class="flex flex-wrap gap-2 max-h-40 overflow-y-auto pt-1">
+              <!-- 차량 태그 동적 생성 -->
+            </div>
+          </div>
+
+          <!-- 3. 실시간 팀 공유 메모장 (차량용) -->
+          <div class="bg-white rounded-2xl shadow-sm p-5 sm:p-6 border border-slate-200/80 flex flex-col">
+            <div class="flex justify-between items-center mb-2">
+              <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+                <i class="fa-solid fa-note-sticky text-amber-500"></i> 차량 공유 메모장
+              </h2>
+              <span id="memoSaveIndicator" class="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">자동 저장됨</span>
+            </div>
+            <p class="text-sm text-slate-600 mb-3.5 leading-snug">주유권 잔액, 하이패스, 차량 점검일 등 팀 전체 공지사항을 자유롭게 적어두세요.</p>
+            <textarea id="carSharedMemo" rows="7"
+              placeholder="여기에 입력한 내용은 모든 팀원에게 실시간으로 공유됩니다..."
+              class="w-full text-base bg-amber-50/70 border border-amber-300 rounded-xl p-4 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y leading-relaxed"
+              oninput="handleMemoInput()"></textarea>
+          </div>
+        </div>
+
+        <!-- 우측 메인 (9칸): 월별 배차 캘린더 -->
+        <div class="lg:col-span-9">
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+            <!-- 캘린더 상단 컨트롤 바 -->
+            <div class="p-4 sm:p-6 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4 bg-slate-50/40">
+              <!-- 월 이동 네비게이션 -->
+              <div class="flex items-center gap-2.5 sm:gap-3.5">
+                <button onclick="changeMonth(-1)" class="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-700 text-base shadow-2xs transition cursor-pointer" title="이전 달">
+                  <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <h2 id="currentMonthTitle" class="text-xl sm:text-2xl font-extrabold text-slate-900 min-w-[140px] text-center">
+                  2026년 10월
+                </h2>
+                <button onclick="changeMonth(1)" class="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-700 text-base shadow-2xs transition cursor-pointer" title="다음 달">
+                  <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <button onclick="goToday()" class="ml-1 px-3.5 py-2 text-sm font-bold rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 shadow-2xs transition cursor-pointer">
+                  오늘
+                </button>
+                <button onclick="openBookingModal(formatDate(new Date()))" class="px-4 py-2 text-sm font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition cursor-pointer flex items-center gap-1.5">
+                  <i class="fa-solid fa-plus"></i> 빠른 배차 신청
+                </button>
+              </div>
+
+              <!-- 차량 필터 & 오전/오후 범례 -->
+              <div class="flex flex-wrap items-center gap-3">
+                <div class="relative">
+                  <select id="vehicleFilter" onchange="renderCalendar()" class="text-sm sm:text-base font-bold border border-slate-300 rounded-xl pl-3.5 pr-9 py-2 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                    <option value="ALL">🚗 전체 차량 보기</option>
+                  </select>
+                </div>
+                <div class="flex items-center gap-2.5 text-sm font-bold">
+                  <span class="flex items-center gap-1.5 text-blue-800 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                    <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span> 오전(AM)
+                  </span>
+                  <span class="flex items-center gap-1.5 text-orange-800 bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-200">
+                    <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> 오후(PM)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 요일 헤더 -->
+            <div class="calendar-grid bg-slate-100/90 border-b border-slate-200 text-center py-3 text-sm sm:text-base font-extrabold text-slate-700">
+              <div class="text-red-500">일</div>
+              <div>월</div>
+              <div>화</div>
+              <div>수</div>
+              <div>목</div>
+              <div>금</div>
+              <div class="text-blue-600">토</div>
+            </div>
+
+            <!-- 달력 날짜 그리드 -->
+            <div id="calendarGrid" class="calendar-grid divide-x divide-y divide-slate-200">
+              <!-- JS로 렌더링 -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- [차량 모달 1] 배차 등록 / 수정 모달 -->
+    <div id="bookingModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4 no-print">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-200">
+        <div class="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+          <h3 id="modalTitle" class="font-extrabold text-xl text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-calendar-check text-blue-600"></i> 차량 배차 신청
+          </h3>
+          <button onclick="closeBookingModal()" class="text-slate-400 hover:text-slate-600 w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-200/60 transition cursor-pointer">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <form id="bookingForm" onsubmit="saveBooking(event)" class="p-6 space-y-5 max-h-[85vh] overflow-y-auto">
+          <input type="hidden" id="bookingId">
+
+          <!-- 중복 경고 배너 -->
+          <div id="conflictBanner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-sm space-y-2.5">
+            <div class="font-extrabold flex items-center gap-1.5 text-amber-800 text-base">
+              <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> 동시간대 중복 배차 알림
+            </div>
+            <p id="conflictMessage" class="leading-relaxed"></p>
+            <div class="flex justify-end gap-2 pt-1">
+              <button type="button" onclick="hideConflictBanner()" class="px-3.5 py-2 rounded-lg bg-white border border-amber-300 text-slate-700 font-bold hover:bg-slate-50 cursor-pointer">시간 수정하기</button>
+              <button type="button" onclick="forceSaveBooking()" class="px-3.5 py-2 rounded-lg bg-amber-600 text-white font-bold hover:bg-amber-700 cursor-pointer">무시하고 등록</button>
+            </div>
+          </div>
+
+          <!-- 날짜 및 차량 선택 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-bold text-slate-700 mb-1.5">배차 일자</label>
+              <input type="date" id="bookingDate" required
+                class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-sm font-bold text-slate-700 mb-1.5">사용 차량</label>
+              <select id="bookingVehicle" required class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </select>
+            </div>
+          </div>
+
+          <!-- 운전자 선택 -->
           <div>
-            <label class="block text-sm font-bold text-slate-700 mb-1.5">사용 차량</label>
-            <select id="bookingVehicle" required class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <!-- 동적 생성 -->
+            <label class="block text-sm font-bold text-slate-700 mb-1.5">
+              <i class="fa-solid fa-id-card text-blue-600 mr-1"></i>운전자 선택 (필수)
+            </label>
+            <select id="bookingDriver" onchange="syncCompanionList()" required class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
             </select>
           </div>
-        </div>
 
-        <!-- 운전자 선택 (1명) -->
-        <div>
-          <label class="block text-sm font-bold text-slate-700 mb-1.5">
-            <i class="fa-solid fa-id-card text-blue-600 mr-1"></i>운전자 선택 (필수)
-          </label>
-          <select id="bookingDriver" onchange="syncCompanionList()" required class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <!-- 동적 생성 -->
-          </select>
-        </div>
-
-        <!-- 동행자 다중 선택 + 직접 추가 -->
-        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/90">
-          <div class="flex justify-between items-center mb-2.5">
-            <label class="block text-sm font-bold text-slate-800">
-              <i class="fa-solid fa-user-plus text-indigo-600 mr-1"></i>동행자 선택 <span class="font-medium text-slate-500">(다중 선택 가능)</span>
-            </label>
-            <span id="selectedCompanionCount" class="text-xs font-extrabold text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-full">0명 선택됨</span>
-          </div>
-          
-          <!-- 팀원 체크박스 칩 영역 -->
-          <div id="companionCheckboxes" class="flex flex-wrap gap-2 mb-3 max-h-36 overflow-y-auto p-0.5">
-            <!-- JS로 렌더링 -->
+          <!-- 동행자 다중 선택 -->
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/90">
+            <div class="flex justify-between items-center mb-2.5">
+              <label class="block text-sm font-bold text-slate-800">
+                <i class="fa-solid fa-user-plus text-indigo-600 mr-1"></i>동행자 선택 <span class="font-medium text-slate-500">(다중 선택 가능)</span>
+              </label>
+              <span id="selectedCompanionCount" class="text-xs font-extrabold text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-full">0명 선택됨</span>
+            </div>
+            <div id="companionCheckboxes" class="flex flex-wrap gap-2 mb-3 max-h-36 overflow-y-auto p-0.5"></div>
+            <input type="text" id="extraCompanions" placeholder="목록 외 동행자 직접 입력 (쉼표로 구분, 예: 실습생 김철수, 외부강사)"
+              class="w-full text-sm border border-slate-300 bg-white rounded-xl px-3.5 py-2.5 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              oninput="updateCompanionCounter()">
           </div>
 
-          <!-- 외부인/추가 동행자 직접 입력 -->
-          <input type="text" id="extraCompanions" placeholder="목록 외 동행자 직접 입력 (쉼표로 구분, 예: 실습생 김철수, 외부강사)" 
-            class="w-full text-sm border border-slate-300 bg-white rounded-xl px-3.5 py-2.5 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            oninput="updateCompanionCounter()">
-        </div>
-
-        <!-- 오전 / 오후 구분 -->
-        <div>
-          <label class="block text-sm font-bold text-slate-700 mb-1.5">오전 / 오후 구분</label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="cursor-pointer">
-              <input type="radio" name="meridiem" value="AM" class="peer sr-only" checked onchange="updateDefaultTime('AM')">
-              <div class="text-center py-3 rounded-xl border border-slate-200 text-base font-extrabold text-slate-600 peer-checked:bg-blue-50 peer-checked:border-blue-500 peer-checked:text-blue-700 transition">
-                <i class="fa-regular fa-sun mr-1"></i> 오전 배차 (AM)
-              </div>
-            </label>
-            <label class="cursor-pointer">
-              <input type="radio" name="meridiem" value="PM" class="peer sr-only" onchange="updateDefaultTime('PM')">
-              <div class="text-center py-3 rounded-xl border border-slate-200 text-base font-extrabold text-slate-600 peer-checked:bg-orange-50 peer-checked:border-orange-500 peer-checked:text-orange-700 transition">
-                <i class="fa-solid fa-cloud-sun mr-1"></i> 오후 배차 (PM)
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <!-- 세부 출발 / 복귀 시간 입력 -->
-        <div class="grid grid-cols-2 gap-4">
+          <!-- 오전 / 오후 구분 -->
           <div>
-            <label class="block text-sm font-bold text-slate-700 mb-1.5">출발 시간</label>
-            <input type="time" id="startTime" value="09:00" required
-              class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label class="block text-sm font-bold text-slate-700 mb-1.5">오전 / 오후 구분</label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="cursor-pointer">
+                <input type="radio" name="meridiem" value="AM" class="peer sr-only" checked onchange="updateDefaultTime('AM')">
+                <div class="text-center py-3 rounded-xl border border-slate-200 text-base font-extrabold text-slate-600 peer-checked:bg-blue-50 peer-checked:border-blue-500 peer-checked:text-blue-700 transition">
+                  <i class="fa-regular fa-sun mr-1"></i> 오전 배차 (AM)
+                </div>
+              </label>
+              <label class="cursor-pointer">
+                <input type="radio" name="meridiem" value="PM" class="peer sr-only" onchange="updateDefaultTime('PM')">
+                <div class="text-center py-3 rounded-xl border border-slate-200 text-base font-extrabold text-slate-600 peer-checked:bg-orange-50 peer-checked:border-orange-500 peer-checked:text-orange-700 transition">
+                  <i class="fa-solid fa-cloud-sun mr-1"></i> 오후 배차 (PM)
+                </div>
+              </label>
+            </div>
           </div>
+
+          <!-- 세부 출발 / 복귀 시간 -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-bold text-slate-700 mb-1.5">출발 시간</label>
+              <input type="time" id="startTime" value="09:00" required
+                class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-sm font-bold text-slate-700 mb-1.5">복귀 예정 시간</label>
+              <input type="time" id="endTime" value="12:00" required
+                class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>
+
+          <!-- 행선지 및 용무 -->
           <div>
-            <label class="block text-sm font-bold text-slate-700 mb-1.5">복귀 예정 시간</label>
-            <input type="time" id="endTime" value="12:00" required
-              class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label class="block text-sm font-bold text-slate-700 mb-1.5">행선지 및 운행 용무 (메모)</label>
+            <input type="text" id="bookingMemo" placeholder="예: 전곡읍 가정방문, 군청 간담회 참석, 물품 수령 등" required
+              class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
           </div>
-        </div>
 
-        <!-- 일정별 메모 (행선지 및 용무) -->
-        <div>
-          <label class="block text-sm font-bold text-slate-700 mb-1.5">행선지 및 운행 용무 (메모)</label>
-          <input type="text" id="bookingMemo" placeholder="예: 전곡읍 가정방문, 군청 간담회 참석, 물품 수령 등" required
-            class="w-full text-base border border-slate-300 rounded-xl px-3.5 py-2.5 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-
-        <!-- 하단 버튼 -->
-        <div class="flex justify-between items-center pt-4 border-t border-slate-200">
-          <div id="deleteConfirmArea" class="hidden items-center gap-2">
-            <span class="text-sm text-red-600 font-bold mr-1">정말 삭제할까요?</span>
-            <button type="button" onclick="confirmDeleteBooking()" class="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 cursor-pointer">예</button>
-            <button type="button" onclick="toggleDeleteConfirm(false)" class="px-3 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-300 cursor-pointer">아니오</button>
-          </div>
-          <button type="button" id="deleteBtn" onclick="toggleDeleteConfirm(true)" class="hidden px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold transition cursor-pointer">
-            <i class="fa-regular fa-trash-can mr-1"></i>배차 삭제
-          </button>
-
-          <div class="flex gap-2.5 ml-auto">
-            <button type="button" onclick="closeBookingModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm sm:text-base font-bold transition cursor-pointer">
-              취소
+          <!-- 하단 버튼 -->
+          <div class="flex justify-between items-center pt-4 border-t border-slate-200">
+            <div id="deleteConfirmArea" class="hidden items-center gap-2">
+              <span class="text-sm text-red-600 font-bold mr-1">정말 삭제할까요?</span>
+              <button type="button" onclick="confirmDeleteBooking()" class="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 cursor-pointer">예</button>
+              <button type="button" onclick="toggleDeleteConfirm(false)" class="px-3 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-300 cursor-pointer">아니오</button>
+            </div>
+            <button type="button" id="deleteBtn" onclick="toggleDeleteConfirm(true)" class="hidden px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold transition cursor-pointer">
+              <i class="fa-regular fa-trash-can mr-1"></i>배차 삭제
             </button>
-            <button type="submit" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-extrabold shadow-sm transition cursor-pointer">
-              배차 저장하기
-            </button>
+
+            <div class="flex gap-2.5 ml-auto">
+              <button type="button" onclick="closeBookingModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm sm:text-base font-bold transition cursor-pointer">
+                취소
+              </button>
+              <button type="submit" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-extrabold shadow-sm transition cursor-pointer">
+                배차 저장하기
+              </button>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
-  </div>
+
+    <!-- [차량 모달 2] 월별 배차 내역 보고서 & 인쇄 / 엑셀 다운로드 모달 -->
+    <div id="reportModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-3 sm:p-6">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
+        <!-- 모달 상단 액션바 (인쇄 시 숨김) -->
+        <div class="px-6 py-4 bg-slate-800 text-white flex flex-wrap justify-between items-center gap-3 no-print">
+          <div class="flex items-center gap-2.5">
+            <i class="fa-solid fa-file-invoice text-indigo-400 text-xl"></i>
+            <h3 class="font-extrabold text-lg sm:text-xl">월별 차량 배차 내역서 조회 및 출력</h3>
+          </div>
+          <div class="flex flex-wrap items-center gap-2.5">
+            <button onclick="exportMonthlyCSV()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
+              <i class="fa-solid fa-file-excel"></i> 엑셀(CSV) 다운로드
+            </button>
+            <button onclick="window.print()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
+              <i class="fa-solid fa-print"></i> A4 인쇄 / PDF 저장
+            </button>
+            <button onclick="closeReportModal()" class="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 flex items-center justify-center transition cursor-pointer ml-1">
+              <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 필터 컨트롤 바 (인쇄 시 숨김) -->
+        <div class="px-6 py-3.5 bg-slate-100 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3 text-sm no-print">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="font-bold text-slate-700">조회 조건:</span>
+            <span id="reportFilterBadge" class="px-3 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-900"></span>
+            <span id="reportTotalCount" class="font-extrabold text-indigo-600">총 0건</span>
+          </div>
+          <p class="text-sm text-slate-600 font-medium">
+            <i class="fa-solid fa-circle-info mr-1 text-blue-600"></i>인쇄 버튼을 누르면 표 영역만 A4 규격에 맞춰 깔끔하게 출력됩니다.
+          </p>
+        </div>
+
+        <!-- 인쇄 영역 (#printArea) -->
+        <div id="printArea" class="p-6 sm:p-8 overflow-y-auto flex-1 bg-white">
+          <div class="text-center mb-6 border-b-2 border-slate-800 pb-4">
+            <h1 id="printDocTitle" class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">2026년 10월 차량 배차 및 운행 내역서</h1>
+            <p id="printDocSub" class="text-sm text-slate-600 mt-1.5 font-medium">출력일시: 2026-10-26 | 대상 차량: 전체 차량</p>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse border border-slate-300 text-sm sm:text-base">
+              <thead>
+                <tr class="bg-slate-100 text-slate-900 font-extrabold border-b border-slate-300">
+                  <th class="border border-slate-300 px-3 py-3 text-center w-14">연번</th>
+                  <th class="border border-slate-300 px-3 py-3 text-center w-32">운행일자</th>
+                  <th class="border border-slate-300 px-3 py-3 text-center w-20">구분</th>
+                  <th class="border border-slate-300 px-3 py-3 text-center w-32">운행시간</th>
+                  <th class="border border-slate-300 px-3 py-3 w-44">차량명</th>
+                  <th class="border border-slate-300 px-3 py-3 w-28 text-center">운전자</th>
+                  <th class="border border-slate-300 px-3 py-3 w-48">동행자</th>
+                  <th class="border border-slate-300 px-3 py-3">행선지 및 운행용무 (메모)</th>
+                </tr>
+              </thead>
+              <tbody id="reportTableBody" class="divide-y divide-slate-200 text-slate-800">
+                <!-- JS로 렌더링 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- [차량 모달 3] 외부 Firebase Realtime Database 연동 설정 모달 -->
+    <div id="guideModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4 no-print">
+      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-200 space-y-4">
+        <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+          <h3 class="font-extrabold text-lg text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-fire text-amber-500"></i> Firebase 실시간 연동 상태 (jeung-car)
+          </h3>
+          <button onclick="closeGuideModal()" class="text-slate-400 hover:text-slate-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
+        </div>
+        <div class="text-sm text-slate-600 space-y-3 leading-relaxed">
+          <div class="p-3.5 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-200 font-bold text-xs sm:text-sm">
+            <i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>
+            <b>jeung-car</b> 프로젝트 설정 키가 코드에 내장되어 있습니다!
+          </div>
+          <p class="text-xs text-slate-500">
+            만약 Firebase 콘솔에서 <b>Realtime Database</b>를 싱가포르(asia-southeast1) 등 다른 리전에 생성하셨다면, 콘솔 상단에 표시된 데이터베이스 주소(`https://...`)를 아래에 붙여넣고 <b>[주소 저장 및 재연결]</b>을 눌러주세요.
+          </p>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1 text-xs">Realtime Database URL</label>
+            <input type="text" id="customDbUrl" placeholder="https://jeung-car-default-rtdb.firebaseio.com"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <button type="button" onclick="fillPresetUrl('https://jeung-car-default-rtdb.firebaseio.com')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">
+                미국(기본) 주소 입력
+              </button>
+              <button type="button" onclick="fillPresetUrl('https://jeung-car-default-rtdb.asia-southeast1.firebasedatabase.app')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">
+                싱가포르(아시아) 주소 입력
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
+          <button onclick="closeGuideModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold cursor-pointer">닫기</button>
+          <button onclick="applyCustomFirebase()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold cursor-pointer">주소 저장 및 재연결</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- =================================================================
-       [모달 2] 월별 배차 내역 보고서 & 인쇄 / 엑셀(CSV) 다운로드 모달
+       상단 탭 전환 스크립트
        ================================================================= -->
-  <div id="reportModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-3 sm:p-6">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
-      
-      <!-- 모달 상단 액션바 (인쇄 시 숨김) -->
-      <div class="px-6 py-4 bg-slate-800 text-white flex flex-wrap justify-between items-center gap-3 no-print">
-        <div class="flex items-center gap-2.5">
-          <i class="fa-solid fa-file-invoice text-indigo-400 text-xl"></i>
-          <h3 class="font-extrabold text-lg sm:text-xl">월별 차량 배차 내역서 조회 및 출력</h3>
-        </div>
-        <div class="flex flex-wrap items-center gap-2.5">
-          <button onclick="exportMonthlyCSV()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
-            <i class="fa-solid fa-file-excel"></i> 엑셀(CSV) 다운로드
-          </button>
-          <button onclick="window.print()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
-            <i class="fa-solid fa-print"></i> A4 인쇄 / PDF 저장
-          </button>
-          <button onclick="closeReportModal()" class="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 flex items-center justify-center transition cursor-pointer ml-1">
-            <i class="fa-solid fa-xmark text-lg"></i>
-          </button>
-        </div>
-      </div>
+  <script>
+    function switchMainTab(tabName) {
+      const leaveSec = document.getElementById('section-leave');
+      const carSec = document.getElementById('section-car');
+      const btnLeave = document.getElementById('tabBtn-leave');
+      const btnCar = document.getElementById('tabBtn-car');
 
-      <!-- 필터 컨트롤 바 (인쇄 시 숨김) -->
-      <div class="px-6 py-3.5 bg-slate-100 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3 text-sm no-print">
-        <div class="flex flex-wrap items-center gap-3">
-          <span class="font-bold text-slate-700">조회 조건:</span>
-          <span id="reportFilterBadge" class="px-3 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-900"></span>
-          <span id="reportTotalCount" class="font-extrabold text-indigo-600">총 0건</span>
-        </div>
-        <p class="text-sm text-slate-600 font-medium">
-          <i class="fa-solid fa-circle-info mr-1 text-blue-600"></i>인쇄 버튼을 누르면 표 영역만 A4 규격에 맞춰 깔끔하게 출력됩니다.
-        </p>
-      </div>
-
-      <!-- 인쇄 영역 (#printArea) -->
-      <div id="printArea" class="p-6 sm:p-8 overflow-y-auto flex-1 bg-white">
-        <div class="text-center mb-6 border-b-2 border-slate-800 pb-4">
-          <h1 id="printDocTitle" class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">2026년 10월 차량 배차 및 운행 내역서</h1>
-          <p id="printDocSub" class="text-sm text-slate-600 mt-1.5 font-medium">출력일시: 2026-10-20 | 대상 차량: 전체 차량</p>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse border border-slate-300 text-sm sm:text-base">
-            <thead>
-              <tr class="bg-slate-100 text-slate-900 font-extrabold border-b border-slate-300">
-                <th class="border border-slate-300 px-3 py-3 text-center w-14">연번</th>
-                <th class="border border-slate-300 px-3 py-3 text-center w-32">운행일자</th>
-                <th class="border border-slate-300 px-3 py-3 text-center w-20">구분</th>
-                <th class="border border-slate-300 px-3 py-3 text-center w-32">운행시간</th>
-                <th class="border border-slate-300 px-3 py-3 w-44">차량명</th>
-                <th class="border border-slate-300 px-3 py-3 w-28 text-center">운전자</th>
-                <th class="border border-slate-300 px-3 py-3 w-48">동행자</th>
-                <th class="border border-slate-300 px-3 py-3">행선지 및 운행용무 (메모)</th>
-              </tr>
-            </thead>
-            <tbody id="reportTableBody" class="divide-y divide-slate-200 text-slate-800">
-              <!-- JS로 렌더링 -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-  </div>
+      if (tabName === 'leave') {
+        leaveSec.classList.remove('hidden');
+        carSec.classList.add('hidden');
+        btnLeave.className = "px-4 py-2 rounded-lg text-sm font-extrabold transition flex items-center gap-2 cursor-pointer bg-indigo-600 text-white shadow-xs";
+        btnCar.className = "px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 cursor-pointer text-slate-600 hover:text-slate-900";
+        // 탭 전환 시 FullCalendar 레이아웃 재계산
+        if (window.leaveCalendarInstance) {
+          setTimeout(() => window.leaveCalendarInstance.updateSize(), 50);
+        }
+      } else {
+        leaveSec.classList.add('hidden');
+        carSec.classList.remove('hidden');
+        btnCar.className = "px-4 py-2 rounded-lg text-sm font-extrabold transition flex items-center gap-2 cursor-pointer bg-blue-600 text-white shadow-xs";
+        btnLeave.className = "px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 cursor-pointer text-slate-600 hover:text-slate-900";
+        if (typeof window.renderCalendar === 'function') {
+          window.renderCalendar();
+        }
+      }
+    }
+  </script>
 
   <!-- =================================================================
-       [모달 3] 외부 Firebase Realtime Database 연동 설정 모달
+       [스크립트 1] 연가 관리 시스템 (Firestore: yeoncheon-leave)
        ================================================================= -->
-  <div id="guideModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4 no-print">
-    <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-200 space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-200 pb-3">
-        <h3 class="font-extrabold text-lg text-slate-900 flex items-center gap-2">
-          <i class="fa-solid fa-fire text-amber-500"></i> Firebase 실시간 연동 상태 (jeung-car)
-        </h3>
-        <button onclick="closeGuideModal()" class="text-slate-400 hover:text-slate-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
-      </div>
-      <div class="text-sm text-slate-600 space-y-3 leading-relaxed">
-        <div class="p-3.5 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-200 font-bold text-xs sm:text-sm">
-          <i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>
-          <b>jeung-car</b> 프로젝트 설정 키가 코드에 내장되어 있습니다!
-        </div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, setDoc, updateDoc, query, orderBy, writeBatch } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-        <p class="text-xs text-slate-500">
-          만약 Firebase 콘솔에서 <b>Realtime Database</b>를 싱가포르(asia-southeast1) 등 다른 리전에 생성하셨다면, 콘솔 상단에 표시된 데이터베이스 주소(`https://...`)를 아래에 붙여넣고 <b>[주소 저장 및 재연결]</b>을 눌러주세요.
-        </p>
+    // 연가 관리 전용 Firebase Config (yeoncheon-leave)
+    const leaveFirebaseConfig = {
+      apiKey: "AIzaSyAYtw2OUEaGGiR7gkLP2nrY66d42gI91ec",
+      authDomain: "yeoncheon-leave.firebaseapp.com",
+      projectId: "yeoncheon-leave",
+      storageBucket: "yeoncheon-leave.firebasestorage.app",
+      messagingSenderId: "450243392342",
+      appId: "1:450243392342:web:f862a3bbd07b825cea1cf7"
+    };
 
-        <div>
-          <label class="block font-bold text-slate-700 mb-1 text-xs">Realtime Database URL</label>
-          <input type="text" id="customDbUrl" placeholder="https://jeung-car-default-rtdb.firebaseio.com" 
-            class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <div class="flex flex-wrap gap-1.5 mt-2">
-            <button type="button" onclick="fillPresetUrl('https://jeung-car-default-rtdb.firebaseio.com')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">
-              미국(기본) 주소 입력
-            </button>
-            <button type="button" onclick="fillPresetUrl('https://jeung-car-default-rtdb.asia-southeast1.firebasedatabase.app')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">
-              싱가포르(아시아) 주소 입력
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
-        <button onclick="closeGuideModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold cursor-pointer">닫기</button>
-        <button onclick="applyCustomFirebase()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold cursor-pointer">주소 저장 및 재연결</button>
-      </div>
-    </div>
-  </div>
+    // 앱 이름을 분리하여 차량 배차 Firebase와 충돌 방지
+    const leaveApp = initializeApp(leaveFirebaseConfig, "yeoncheonLeaveApp");
+    const db = getFirestore(leaveApp);
 
-  <!-- Firebase Compat SDK (Realtime Database & Firestore 모두 지원) -->
+    let currentEmpId = null;
+    let employeesData = [];
+    let recordsData = [];
+    let editingRecordId = null;
+    let calendar;
+    let pendingConfirmCallback = null;
+
+    function normalizeLeaveType(type) {
+      if (!type) return '연가';
+      if (type === '초과근무') return '대체휴무';
+      return type;
+    }
+
+    const TYPE_CONFIG = {
+      '연가': {
+        deduct: true,
+        badgeClass: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+        calBg: '#4f46e5',
+        calBorder: '#4338ca'
+      },
+      '공가': {
+        deduct: false,
+        badgeClass: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        calBg: '#10b981',
+        calBorder: '#059669'
+      },
+      '대체휴무': {
+        deduct: false,
+        badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
+        calBg: '#f59e0b',
+        calBorder: '#d97706'
+      },
+      '비공식 연가': {
+        deduct: false,
+        badgeClass: 'bg-purple-100 text-purple-700 border-purple-200',
+        calBg: '#8b5cf6',
+        calBorder: '#7c3aed'
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const calendarEl = document.getElementById('calendar');
+      calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'ko',
+        selectable: true,
+        unselectAuto: true,
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,dayGridWeek'
+        },
+        contentHeight: 'auto',
+        events: [],
+        dateClick: function(info) {
+          openModalByDate(info.dateStr, info.dateStr);
+        },
+        select: function(info) {
+          const startDateObj = new Date(info.startStr + 'T00:00:00');
+          const endDateObj = new Date(info.endStr + 'T00:00:00');
+          const diffDays = Math.round((endDateObj - startDateObj) / (1000 * 60 * 60 * 24));
+
+          if (diffDays > 1) {
+            endDateObj.setDate(endDateObj.getDate() - 1);
+            const yyyy = endDateObj.getFullYear();
+            const mm = String(endDateObj.getMonth() + 1).padStart(2, '0');
+            const dd = String(endDateObj.getDate()).padStart(2, '0');
+            const inclusiveEndStr = `${yyyy}-${mm}-${dd}`;
+            openModalByDate(info.startStr, inclusiveEndStr);
+          }
+        },
+        eventClick: function(info) {
+          const recordId = info.event.id;
+          const record = recordsData.find(r => r.id === recordId);
+          if (record) {
+            const emp = employeesData.find(e => e.id === record.empId);
+            if (emp) {
+              openModal(emp.id, emp.name);
+              startEditRecord(record.id);
+              return;
+            }
+          }
+          showLeaveToast(`${info.event.title}`);
+        }
+      });
+      calendar.render();
+      window.leaveCalendarInstance = calendar;
+    });
+
+    function updateCalendar() {
+      if (!calendar) return;
+      calendar.removeAllEvents();
+
+      recordsData.forEach(record => {
+        const emp = employeesData.find(e => e.id === record.empId);
+        const empName = emp ? emp.name : '알수없음';
+        const type = normalizeLeaveType(record.leaveType);
+        const config = TYPE_CONFIG[type] || TYPE_CONFIG['연가'];
+
+        let startStr = '';
+        let endStr = '';
+
+        const rawDate = record.dateStr || record.date || '';
+        if (!rawDate) return;
+
+        if (rawDate.includes('~')) {
+          const parts = rawDate.split('~').map(s => s.trim());
+          startStr = parts[0];
+
+          const endDateObj = new Date(parts[1] + 'T00:00:00');
+          if (!isNaN(endDateObj.getTime())) {
+            endDateObj.setDate(endDateObj.getDate() + 1);
+            const yyyy = endDateObj.getFullYear();
+            const mm = String(endDateObj.getMonth() + 1).padStart(2, '0');
+            const dd = String(endDateObj.getDate()).padStart(2, '0');
+            endStr = `${yyyy}-${mm}-${dd}`;
+          }
+        } else {
+          startStr = rawDate.trim();
+        }
+
+        const timeText = formatTime(record.usedMins);
+        const title = `[${type}] ${empName} (${timeText})`;
+
+        calendar.addEvent({
+          id: record.id,
+          title: title,
+          start: startStr,
+          end: endStr || undefined,
+          allDay: true,
+          backgroundColor: config.calBg,
+          borderColor: config.calBorder,
+          textColor: '#ffffff'
+        });
+      });
+    }
+
+    window.formatTime = function(totalMinutes) {
+      if (!totalMinutes || totalMinutes === 0) return "0시간";
+      const isNegative = totalMinutes < 0;
+      const absMins = Math.abs(totalMinutes);
+
+      const days = Math.floor(absMins / (8 * 60));
+      const remainAfterDays = absMins % (8 * 60);
+      const hours = Math.floor(remainAfterDays / 60);
+      const mins = remainAfterDays % 60;
+
+      let result = [];
+      if (days > 0) result.push(`${days}일`);
+      if (hours > 0) result.push(`${hours}시간`);
+      if (mins > 0) result.push(`${mins}분`);
+      return (isNegative ? "-" : "") + result.join(" ");
+    };
+
+    function showLeaveToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.innerText = msg;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
+
+    window.openConfirmModal = function(message, onConfirm) {
+      document.getElementById("confirmMessage").innerText = message;
+      pendingConfirmCallback = onConfirm;
+      document.getElementById("confirmModal").classList.remove("hidden");
+    };
+
+    window.closeConfirmModal = function() {
+      document.getElementById("confirmModal").classList.add("hidden");
+      pendingConfirmCallback = null;
+    };
+
+    document.getElementById("confirmActionBtn").addEventListener("click", async () => {
+      if (pendingConfirmCallback) {
+        await pendingConfirmCallback();
+      }
+      closeConfirmModal();
+    });
+
+    window.updateDeductNotice = function() {
+      const type = document.getElementById("leaveType").value;
+      const noticeEl = document.getElementById("deductNotice");
+      if (type === '연가') {
+        noticeEl.innerText = "공식 연가 차감됨";
+        noticeEl.className = "text-xs font-semibold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700";
+      } else {
+        noticeEl.innerText = `${type} (연가 미차감)`;
+        noticeEl.className = "text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700";
+      }
+    };
+
+    // 연가 공유 메모장 실시간 수신
+    onSnapshot(doc(db, "settings", "shared_memo"), (docSnap) => {
+      if (docSnap.exists()) {
+        document.getElementById("leaveSharedMemo").value = docSnap.data().content || "";
+      }
+    });
+
+    window.saveMemo = async function() {
+      const content = document.getElementById("leaveSharedMemo").value;
+      try {
+        await setDoc(doc(db, "settings", "shared_memo"), {
+          content: content,
+          updatedAt: new Date().getTime()
+        }, { merge: true });
+        showLeaveToast("메모가 성공적으로 공유되었습니다.");
+      } catch (e) {
+        showLeaveToast("오류 발생: " + e.message);
+      }
+    };
+
+    // 직원 목록 실시간 수신
+    onSnapshot(query(collection(db, "employees"), orderBy("createdAt", "desc")), (snapshot) => {
+      employeesData = [];
+      snapshot.forEach((docSnap) => employeesData.push({ id: docSnap.id, ...docSnap.data() }));
+      renderEmployees();
+      updateCalendar();
+    });
+
+    // 연가 내역 실시간 수신
+    onSnapshot(collection(db, "leave_records"), (snapshot) => {
+      recordsData = [];
+      snapshot.forEach((docSnap) => recordsData.push({ id: docSnap.id, ...docSnap.data() }));
+      renderEmployees();
+      updateCalendar();
+      if (currentEmpId) renderRecords();
+    });
+
+    function renderEmployees() {
+      const tbody = document.getElementById("employeeTableBody");
+      tbody.innerHTML = "";
+
+      let latestTime = 0;
+      let latestEmpId = null;
+
+      employeesData.forEach(emp => {
+        const time = emp.updatedAt || emp.createdAt || 0;
+        if (time > latestTime) {
+          latestTime = time;
+          latestEmpId = emp.id;
+        }
+      });
+
+      if (employeesData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-gray-400 text-sm">등록된 직원이 없습니다. 좌측에서 직원을 등록해주세요.</td></tr>`;
+        return;
+      }
+
+      employeesData.forEach(emp => {
+        const empRecords = recordsData.filter(r => r.empId === emp.id);
+
+        const deductedRecords = empRecords.filter(r => normalizeLeaveType(r.leaveType) === '연가');
+        const usedTotalMins = deductedRecords.reduce((sum, r) => sum + (r.usedMins || 0), 0);
+
+        const nonDeductedRecords = empRecords.filter(r => normalizeLeaveType(r.leaveType) !== '연가');
+        const nonDeductedSummary = {};
+        nonDeductedRecords.forEach(r => {
+          const t = normalizeLeaveType(r.leaveType);
+          nonDeductedSummary[t] = (nonDeductedSummary[t] || 0) + (r.usedMins || 0);
+        });
+
+        let otherHtml = `<span class="text-gray-400 text-xs">-</span>`;
+        const otherKeys = Object.keys(nonDeductedSummary);
+        if (otherKeys.length > 0) {
+          otherHtml = `<div class="flex flex-wrap gap-1">` + otherKeys.map(t => {
+            const cfg = TYPE_CONFIG[t] || TYPE_CONFIG['공가'];
+            return `<span class="text-xs px-2 py-0.5 rounded border font-medium ${cfg.badgeClass}">${t} ${formatTime(nonDeductedSummary[t])}</span>`;
+          }).join("") + `</div>`;
+        }
+
+        const totalMins = emp.totalMins || 0;
+        const remainMins = totalMins - usedTotalMins;
+
+        const isLatest = (emp.id === latestEmpId && latestTime > 0);
+        const badgeHtml = isLatest ? `<span class="bg-blue-100 text-blue-600 border border-blue-200 text-[10px] px-1.5 py-0.5 rounded-md font-bold ml-1.5 whitespace-nowrap align-middle">최근 변경</span>` : '';
+
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-gray-100 hover:bg-gray-50 transition cursor-pointer";
+        tr.innerHTML = `
+          <td class="p-3 text-gray-800 font-medium whitespace-nowrap" onclick="openModal('${emp.id}', '${emp.name}')">${emp.name}${badgeHtml}</td>
+          <td class="p-3 text-blue-600 text-sm whitespace-nowrap" onclick="openModal('${emp.id}', '${emp.name}')">${formatTime(totalMins)}</td>
+          <td class="p-3 text-red-500 text-sm font-medium whitespace-nowrap" onclick="openModal('${emp.id}', '${emp.name}')">${formatTime(usedTotalMins)}</td>
+          <td class="p-3 font-bold text-gray-800 text-sm whitespace-nowrap" onclick="openModal('${emp.id}', '${emp.name}')">${formatTime(remainMins)}</td>
+          <td class="p-3" onclick="openModal('${emp.id}', '${emp.name}')">${otherHtml}</td>
+          <td class="p-3 text-center whitespace-nowrap">
+            <button onclick="deleteEmployee('${emp.id}')" class="text-xs bg-red-100 text-red-600 px-2.5 py-1 rounded hover:bg-red-200 font-medium transition cursor-pointer">삭제</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 신규 직원 등록
+    window.addEmployee = async function() {
+      const name = document.getElementById("empName").value.trim();
+      const days = parseInt(document.getElementById("empTotalDays").value) || 0;
+      const hours = parseInt(document.getElementById("empTotalHours").value) || 0;
+
+      if (!name) return showLeaveToast("이름을 입력해주세요.");
+
+      const totalMins = (days * 8 * 60) + (hours * 60);
+      const now = new Date().getTime();
+
+      try {
+        await addDoc(collection(db, "employees"), {
+          name: name,
+          totalMins: totalMins,
+          createdAt: now,
+          updatedAt: now
+        });
+        document.getElementById("empName").value = "";
+        document.getElementById("empTotalDays").value = "15";
+        document.getElementById("empTotalHours").value = "0";
+        showLeaveToast("직원이 등록되었습니다.");
+      } catch (e) {
+        showLeaveToast("오류 발생: " + e.message);
+      }
+    };
+
+    // 직원 삭제
+    window.deleteEmployee = function(id) {
+      openConfirmModal("해당 직원과 모든 연가/근무 내역이 삭제됩니다. 계속하시겠습니까?", async () => {
+        try {
+          await deleteDoc(doc(db, "employees", id));
+          const batch = writeBatch(db);
+          const toDelete = recordsData.filter(r => r.empId === id);
+          toDelete.forEach(r => batch.delete(doc(db, "leave_records", r.id)));
+          await batch.commit();
+
+          showLeaveToast("직원이 삭제되었습니다.");
+        } catch (e) {
+          showLeaveToast("오류 발생: " + e.message);
+        }
+      });
+    };
+
+    function populateModalEmpSelect(selectedId) {
+      const selectEl = document.getElementById("modalEmpSelect");
+      if (!selectEl) return;
+      selectEl.innerHTML = "";
+      employeesData.forEach(emp => {
+        const opt = document.createElement("option");
+        opt.value = emp.id;
+        opt.innerText = `${emp.name} 선생님`;
+        if (emp.id === selectedId) opt.selected = true;
+        selectEl.appendChild(opt);
+      });
+    }
+
+    window.changeModalEmployee = function(newEmpId) {
+      const emp = employeesData.find(e => e.id === newEmpId);
+      if (!emp) return;
+      currentEmpId = emp.id;
+      document.getElementById("modalEmpName").innerText = emp.name;
+
+      const currentStart = document.getElementById("startDate").value;
+      const currentEnd = document.getElementById("endDate").value;
+      cancelEdit(currentStart, currentEnd);
+      renderRecords();
+    };
+
+    window.openModal = function(id, name, presetStartDate = null, presetEndDate = null) {
+      currentEmpId = id;
+      document.getElementById("modalEmpName").innerText = name;
+      populateModalEmpSelect(id);
+      cancelEdit(presetStartDate, presetEndDate);
+      document.getElementById("leaveModal").classList.remove("hidden");
+      renderRecords();
+    };
+
+    window.openModalByDate = function(startStr, endStr) {
+      if (employeesData.length === 0) {
+        showLeaveToast("먼저 좌측에서 직원을 등록해주세요.");
+        return;
+      }
+      const defaultEmp = employeesData[0];
+      openModal(defaultEmp.id, defaultEmp.name, startStr, endStr || startStr);
+    };
+
+    window.closeModal = function() {
+      document.getElementById("leaveModal").classList.add("hidden");
+      currentEmpId = null;
+      editingRecordId = null;
+    };
+
+    function renderRecords() {
+      const tbody = document.getElementById("recordTableBody");
+      tbody.innerHTML = "";
+      const empRecords = recordsData.filter(r => r.empId === currentEmpId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+      if (empRecords.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-500">등록된 일정/연가 내역이 없습니다.</td></tr>`;
+        return;
+      }
+
+      empRecords.forEach(record => {
+        const displayDate = record.dateStr || record.date || "날짜 미상";
+        const type = normalizeLeaveType(record.leaveType);
+        const config = TYPE_CONFIG[type] || TYPE_CONFIG['연가'];
+
+        const timeHtml = config.deduct
+          ? `<span class="text-red-500 font-semibold">-${formatTime(record.usedMins)}</span>`
+          : `<span class="text-gray-700 font-medium">${formatTime(record.usedMins)}</span> <span class="text-[11px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded ml-1">미차감</span>`;
+
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-gray-100 hover:bg-gray-50";
+        tr.innerHTML = `
+          <td class="p-2.5 whitespace-nowrap">
+            <span class="text-xs px-2 py-0.5 rounded border font-bold ${config.badgeClass}">${type}</span>
+          </td>
+          <td class="p-2.5 text-gray-700 font-medium whitespace-nowrap">${displayDate}</td>
+          <td class="p-2.5 whitespace-nowrap">${timeHtml}</td>
+          <td class="p-2.5 text-right whitespace-nowrap">
+            <button onclick="startEditRecord('${record.id}')" class="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded hover:bg-green-200 font-medium mr-1 transition cursor-pointer">수정</button>
+            <button onclick="deleteRecord('${record.id}')" class="text-xs bg-red-100 text-red-600 px-2.5 py-1 rounded hover:bg-red-200 font-medium transition cursor-pointer">삭제</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    window.startEditRecord = function(id) {
+      const record = recordsData.find(r => r.id === id);
+      if (!record) return;
+
+      editingRecordId = id;
+
+      document.getElementById("leaveType").value = normalizeLeaveType(record.leaveType);
+      updateDeductNotice();
+
+      const rawDate = record.dateStr || record.date || "";
+      if (rawDate.includes("~")) {
+        const parts = rawDate.split("~");
+        document.getElementById("startDate").value = parts[0].trim();
+        document.getElementById("endDate").value = parts[1].trim();
+      } else {
+        document.getElementById("startDate").value = rawDate.trim();
+        document.getElementById("endDate").value = rawDate.trim();
+      }
+
+      const days = Math.floor(record.usedMins / (8 * 60));
+      const remain = record.usedMins % (8 * 60);
+      const hours = Math.floor(remain / 60);
+      const mins = remain % 60;
+
+      document.getElementById("useDays").value = days;
+      document.getElementById("useHours").value = hours;
+      document.getElementById("useMins").value = mins;
+
+      document.getElementById("formTitle").innerText = "일정/연가 내역 수정";
+      document.getElementById("saveRecordBtn").innerText = "수정 완료";
+      document.getElementById("saveRecordBtn").classList.replace("bg-indigo-600", "bg-green-600");
+      document.getElementById("saveRecordBtn").classList.replace("hover:bg-indigo-700", "hover:bg-green-700");
+      document.getElementById("cancelEditBtn").classList.remove("hidden");
+    };
+
+    window.cancelEdit = function(presetStartDate = null, presetEndDate = null) {
+      editingRecordId = null;
+
+      document.getElementById("leaveType").value = "연가";
+      updateDeductNotice();
+
+      const today = new Date().toISOString().substring(0, 10);
+      const startVal = (typeof presetStartDate === 'string' && presetStartDate) ? presetStartDate : today;
+      const endVal = (typeof presetEndDate === 'string' && presetEndDate) ? presetEndDate : startVal;
+
+      document.getElementById("startDate").value = startVal;
+      document.getElementById("endDate").value = endVal;
+
+      document.getElementById("useDays").value = "0";
+      document.getElementById("useHours").value = "0";
+      document.getElementById("useMins").value = "0";
+
+      document.getElementById("formTitle").innerText = "새 일정/연가 등록";
+      document.getElementById("saveRecordBtn").innerText = "등록";
+      document.getElementById("saveRecordBtn").classList.replace("bg-green-600", "bg-indigo-600");
+      document.getElementById("saveRecordBtn").classList.replace("hover:bg-green-700", "hover:bg-indigo-700");
+      document.getElementById("cancelEditBtn").classList.add("hidden");
+    };
+
+    window.saveLeaveRecord = async function() {
+      const leaveType = document.getElementById("leaveType").value;
+      const startDate = document.getElementById("startDate").value;
+      const endDate = document.getElementById("endDate").value;
+
+      const days = parseInt(document.getElementById("useDays").value) || 0;
+      const hours = parseInt(document.getElementById("useHours").value) || 0;
+      const mins = parseInt(document.getElementById("useMins").value) || 0;
+
+      const usedMins = (days * 8 * 60) + (hours * 60) + mins;
+
+      if (!startDate) return showLeaveToast("시작일을 지정해주세요.");
+      if (endDate && endDate < startDate) return showLeaveToast("종료일은 시작일보다 빠를 수 없습니다.");
+      if (usedMins === 0) return showLeaveToast("사용할 시간(일/시간/분)을 선택해주세요.");
+
+      let dateStr = startDate;
+      if (endDate && startDate !== endDate) {
+        dateStr = `${startDate} ~ ${endDate}`;
+      }
+
+      const now = new Date().getTime();
+
+      try {
+        if (editingRecordId) {
+          await updateDoc(doc(db, "leave_records", editingRecordId), {
+            leaveType: leaveType,
+            dateStr: dateStr,
+            usedMins: usedMins
+          });
+          await updateDoc(doc(db, "employees", currentEmpId), { updatedAt: now });
+          showLeaveToast("내역이 수정되었습니다.");
+          cancelEdit();
+        } else {
+          await addDoc(collection(db, "leave_records"), {
+            empId: currentEmpId,
+            leaveType: leaveType,
+            dateStr: dateStr,
+            usedMins: usedMins,
+            createdAt: now
+          });
+          await updateDoc(doc(db, "employees", currentEmpId), { updatedAt: now });
+          cancelEdit();
+          showLeaveToast(leaveType === '연가' ? "연가가 등록 및 차감되었습니다." : `${leaveType} 일정이 등록되었습니다. (연가 미차감)`);
+        }
+      } catch (e) {
+        showLeaveToast("오류 발생: " + e.message);
+      }
+    };
+
+    window.deleteRecord = function(id) {
+      const record = recordsData.find(r => r.id === id);
+      const type = record ? normalizeLeaveType(record.leaveType) : '연가';
+      const msg = type === '연가'
+        ? "이 연가 차감 내역을 삭제하시겠습니까? (연가 시간이 다시 복구됩니다)"
+        : `이 ${type} 내역을 삭제하시겠습니까?`;
+
+      openConfirmModal(msg, async () => {
+        try {
+          const empIdToUpdate = record ? record.empId : currentEmpId;
+          await deleteDoc(doc(db, "leave_records", id));
+
+          if (empIdToUpdate) {
+            await updateDoc(doc(db, "employees", empIdToUpdate), { updatedAt: new Date().getTime() });
+          }
+
+          showLeaveToast("기록이 삭제되었습니다.");
+        } catch (e) {
+          showLeaveToast("오류 발생: " + e.message);
+        }
+      });
+    };
+  </script>
+
+  <!-- =================================================================
+       [스크립트 2] 차량 배차 관리 시스템 (Realtime DB / Firestore: jeung-car)
+       ================================================================= -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <!-- 애플리케이션 메인 스크립트 -->
   <script>
-    /********************************************************************
-     * [1] 사용자 FIREBASE 설정 (jeung-car 프로젝트 반영 완료)
-     ********************************************************************/
     const DEFAULT_RTDB_URL = "https://jeung-car-default-rtdb.firebaseio.com";
     const savedCustomUrl = localStorage.getItem('jeung_car_rtdb_url');
 
@@ -544,16 +1481,12 @@
     let memoTimeout = null;
     let pendingBookingData = null;
 
-    // Firebase 핸들러
     let firebaseApp = null;
     let rtdbRef = null;
     let firestoreDocRef = null;
-    let activeSyncMode = 'LOCAL'; // 'RTDB' | 'FIRESTORE' | 'LOCAL'
+    let activeSyncMode = 'LOCAL';
 
-    /********************************************************************
-     * [1-2] 화면 글자 크기 배율 조절 기능 (기본 / 크게 / 아주 크게)
-     ********************************************************************/
-    let currentFontScale = 'large';
+    let currentFontScale = 'normal';
 
     function setFontScale(scale) {
       currentFontScale = scale;
@@ -565,17 +1498,18 @@
         const btn = document.getElementById(`fontBtn-${key}`);
         if (!btn) return;
         if (key === scale) {
-          btn.className = "font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer bg-white text-blue-600 shadow-2xs";
+          btn.className = "font-scale-btn px-2 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer bg-white text-blue-600 shadow-2xs";
         } else {
-          btn.className = "font-scale-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900";
+          btn.className = "font-scale-btn px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900";
         }
       });
+
+      if (window.leaveCalendarInstance) {
+        setTimeout(() => window.leaveCalendarInstance.updateSize(), 50);
+      }
     }
 
-    /********************************************************************
-     * [2] 알림 토스트 유틸리티
-     ********************************************************************/
-    function showToast(message, type = 'info') {
+    function showCarToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
       const colorMap = {
@@ -593,14 +1527,10 @@
       }, 2600);
     }
 
-    /********************************************************************
-     * [3] Firebase (jeung-car) 실시간 데이터베이스 연결 초기화
-     ********************************************************************/
     function initDataSync() {
       const statusBadge = document.getElementById('syncStatus');
       document.getElementById('customDbUrl').value = FIREBASE_CONFIG.databaseURL;
 
-      // 로컬 백업 데이터 먼저 불러오기
       const localSaved = localStorage.getItem('jeungCarDispatchBackup');
       if (localSaved) {
         try {
@@ -610,13 +1540,11 @@
       }
 
       try {
-        firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+        firebaseApp = firebase.initializeApp(FIREBASE_CONFIG, "jeungCarMainApp");
 
-        // 1) Realtime Database 연결 시도
-        const db = firebase.database();
+        const db = firebaseApp.database();
         rtdbRef = db.ref('carDispatchApp');
 
-        // 실시간 연결 상태 감지
         db.ref('.info/connected').on('value', (snap) => {
           if (snap.val() === true) {
             activeSyncMode = 'RTDB';
@@ -635,7 +1563,6 @@
             localStorage.setItem('jeungCarDispatchBackup', JSON.stringify(state));
             renderAll(false);
           } else {
-            // DB가 비어 있으면 초기 데이터를 업로드
             rtdbRef.set(state);
           }
         }, (err) => {
@@ -649,12 +1576,11 @@
       }
     }
 
-    // 만약 Realtime Database 대신 Firestore를 생성해 두셨을 경우 자동 호환
     function initFirestoreFallback() {
       if (!firebaseApp) return;
       const statusBadge = document.getElementById('syncStatus');
       try {
-        const fs = firebase.firestore();
+        const fs = firebaseApp.firestore();
         firestoreDocRef = fs.collection('carDispatchApp').doc('mainState');
         firestoreDocRef.onSnapshot((docSnap) => {
           activeSyncMode = 'FIRESTORE';
@@ -707,11 +1633,10 @@
       document.getElementById('customDbUrl').value = url;
     }
 
-    // 사용자 정의 Realtime Database URL 변경 및 즉시 재연결
     function applyCustomFirebase() {
       const dbUrl = document.getElementById('customDbUrl').value.trim();
       if (!dbUrl) {
-        showToast('Realtime Database URL을 입력해 주세요.', 'warn');
+        showCarToast('Realtime Database URL을 입력해 주세요.', 'warn');
         return;
       }
       try {
@@ -740,28 +1665,22 @@
         statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span> 실시간 동기화 중 (jeung-car)`;
 
         closeGuideModal();
-        showToast('새로운 데이터베이스 주소로 연결되었습니다!', 'success');
+        showCarToast('새로운 데이터베이스 주소로 연결되었습니다!', 'success');
       } catch (err) {
-        showToast('연결 중 오류가 발생했습니다. 주소를 확인해 주세요.', 'error');
+        showCarToast('연결 중 오류가 발생했습니다. 주소를 확인해 주세요.', 'error');
       }
     }
 
-    /********************************************************************
-     * [4] 전체 화면 렌더링
-     ********************************************************************/
     function renderAll(updateMemoField = true) {
       renderMembers();
       renderVehicles();
       renderCalendar();
-      const memoEl = document.getElementById('sharedMemo');
-      if (updateMemoField || document.activeElement !== memoEl) {
+      const memoEl = document.getElementById('carSharedMemo');
+      if (memoEl && (updateMemoField || document.activeElement !== memoEl)) {
         memoEl.value = state.sharedMemo || "";
       }
     }
 
-    /********************************************************************
-     * [5] 팀원(운전자/동행자) 및 차량 관리
-     ********************************************************************/
     function renderMembers() {
       const container = document.getElementById('memberList');
       document.getElementById('memberCount').textContent = `${state.members.length}명`;
@@ -784,19 +1703,19 @@
       const name = input.value.trim();
       if (!name) return;
       if (state.members.includes(name)) {
-        showToast('이미 등록된 팀원 이름입니다.', 'warn');
+        showCarToast('이미 등록된 팀원 이름입니다.', 'warn');
         return;
       }
       state.members.push(name);
       input.value = '';
       saveToDataSource();
-      showToast(`'${name}' 팀원이 추가되었습니다.`, 'success');
+      showCarToast(`'${name}' 팀원이 추가되었습니다.`, 'success');
     }
 
     function removeMember(index) {
       const removed = state.members.splice(index, 1);
       saveToDataSource();
-      showToast(`'${removed[0]}' 팀원이 삭제되었습니다.`);
+      showCarToast(`'${removed[0]}' 팀원이 삭제되었습니다.`);
     }
 
     function renderVehicles() {
@@ -815,7 +1734,6 @@
         `).join('');
       }
 
-      // 상단 필터 드롭다운 유지 업데이트
       const filterSelect = document.getElementById('vehicleFilter');
       const currentVal = filterSelect.value;
       filterSelect.innerHTML = `<option value="ALL">🚗 전체 차량 보기</option>` +
@@ -828,40 +1746,34 @@
       const v = input.value.trim();
       if (!v) return;
       if (state.vehicles.includes(v)) {
-        showToast('이미 등록된 차량입니다.', 'warn');
+        showCarToast('이미 등록된 차량입니다.', 'warn');
         return;
       }
       state.vehicles.push(v);
       input.value = '';
       saveToDataSource();
-      showToast(`'${v}' 차량이 추가되었습니다.`, 'success');
+      showCarToast(`'${v}' 차량이 추가되었습니다.`, 'success');
     }
 
     function removeVehicle(index) {
       const removed = state.vehicles.splice(index, 1);
       saveToDataSource();
-      showToast(`'${removed[0]}' 차량이 삭제되었습니다.`);
+      showCarToast(`'${removed[0]}' 차량이 삭제되었습니다.`);
     }
 
-    /********************************************************************
-     * [6] 공유 메모장 실시간 자동 저장
-     ********************************************************************/
     function handleMemoInput() {
       const indicator = document.getElementById('memoSaveIndicator');
       indicator.textContent = "저장 중...";
       indicator.className = "text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg";
       clearTimeout(memoTimeout);
       memoTimeout = setTimeout(() => {
-        state.sharedMemo = document.getElementById('sharedMemo').value;
+        state.sharedMemo = document.getElementById('carSharedMemo').value;
         saveToDataSource();
         indicator.textContent = "자동 저장됨 ✓";
         indicator.className = "text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg";
       }, 450);
     }
 
-    /********************************************************************
-     * [7] 월별 캘린더 렌더링 (운전자 + 동행자 배지 가독성 대폭 강화)
-     ********************************************************************/
     function renderCalendar() {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
@@ -879,12 +1791,10 @@
       const grid = document.getElementById('calendarGrid');
       let html = '';
 
-      // 이전 달 빈 칸
       for (let i = 0; i < firstDay; i++) {
         html += `<div class="calendar-cell bg-slate-50/70 p-2.5"></div>`;
       }
 
-      // 날짜 셀 렌더링
       for (let day = 1; day <= lastDate; day++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayOfWeek = (firstDay + day - 1) % 7;
@@ -903,18 +1813,15 @@
 
         html += `
           <div class="calendar-cell p-2.5 flex flex-col justify-between group relative ${isToday ? 'bg-blue-50/30' : 'bg-white'}">
-            <!-- 상단 날짜 및 +배차 버튼 -->
             <div class="flex justify-between items-center mb-2">
               <span class="text-base sm:text-lg font-extrabold ${dayColor} ${isToday ? 'bg-blue-600 text-white px-2.5 py-0.5 rounded-full shadow-xs' : ''}">
                 ${day}
               </span>
-              <button onclick="openBookingModal('${dateStr}')" 
+              <button onclick="openBookingModal('${dateStr}')"
                 class="opacity-90 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 text-xs font-bold bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-700 px-2.5 py-1 rounded-lg transition cursor-pointer">
                 + 배차
               </button>
             </div>
-
-            <!-- 오전 / 오후 배차 목록 -->
             <div class="space-y-2 flex-1">
               <div class="space-y-1.5">
                 ${amBookings.map(b => renderBookingBadge(b, 'AM')).join('')}
@@ -927,7 +1834,6 @@
         `;
       }
 
-      // 다음 달 빈 칸
       const totalCells = firstDay + lastDate;
       const remaining = (7 - (totalCells % 7)) % 7;
       for (let i = 0; i < remaining; i++) {
@@ -945,7 +1851,6 @@
       const tagColor = isAM ? 'bg-blue-600 text-white' : 'bg-orange-500 text-white';
       const label = isAM ? '오전' : '오후';
 
-      // 운전자 호환 처리
       const driverName = b.driver || b.member || '미지정';
       const companions = Array.isArray(b.companions) ? b.companions : [];
 
@@ -956,7 +1861,7 @@
       }
 
       return `
-        <div onclick="openBookingModal('${b.date}', '${b.id}')" 
+        <div onclick="openBookingModal('${b.date}', '${b.id}')"
           class="cursor-pointer p-2.5 rounded-xl border text-xs sm:text-sm leading-snug transition shadow-2xs ${badgeStyle}">
           <div class="flex items-center justify-between gap-1 mb-1">
             <span class="inline-block px-2 py-0.5 rounded-md text-xs font-extrabold ${tagColor} shrink-0">${label}</span>
@@ -979,23 +1884,19 @@
       renderCalendar();
     }
 
-    /********************************************************************
-     * [8] 배차 신청 / 수정 모달 (운전자 & 동행자 다중 선택)
-     ********************************************************************/
     function openBookingModal(dateStr, bookingId = null) {
       if (state.members.length === 0) {
-        showToast('좌측에서 팀원 이름을 먼저 1명 이상 등록해 주세요.', 'warn');
+        showCarToast('좌측에서 팀원 이름을 먼저 1명 이상 등록해 주세요.', 'warn');
         return;
       }
       if (state.vehicles.length === 0) {
-        showToast('좌측에서 운행 차량을 먼저 1대 이상 등록해 주세요.', 'warn');
+        showCarToast('좌측에서 운행 차량을 먼저 1대 이상 등록해 주세요.', 'warn');
         return;
       }
 
       hideConflictBanner();
       toggleDeleteConfirm(false);
 
-      // 차량 및 운전자 옵션 렌더링
       document.getElementById('bookingVehicle').innerHTML = state.vehicles
         .map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
       document.getElementById('bookingDriver').innerHTML = state.members
@@ -1009,7 +1910,6 @@
         const driverName = b.driver || b.member || state.members[0];
         const savedCompanions = Array.isArray(b.companions) ? b.companions : [];
 
-        // 팀원 명단에 있는 동행자와 직접 입력한 외부 동행자 분리
         const memberCompanions = savedCompanions.filter(c => state.members.includes(c));
         const customCompanions = savedCompanions.filter(c => !state.members.includes(c));
 
@@ -1031,7 +1931,6 @@
         document.getElementById('bookingId').value = '';
         document.getElementById('bookingDate').value = dateStr;
 
-        // 상단 필터에서 특정 차량을 보고 있었다면 기본 선택
         const currentVehicleFilter = document.getElementById('vehicleFilter').value;
         if (currentVehicleFilter !== 'ALL') {
           document.getElementById('bookingVehicle').value = currentVehicleFilter;
@@ -1053,7 +1952,6 @@
       modal.classList.add('flex');
     }
 
-    // 운전자 변경 시 동행자 체크박스 갱신 (운전자 본인은 동행자에서 자동 제외)
     function syncCompanionList() {
       const currentDriver = document.getElementById('bookingDriver').value;
       const currentlyChecked = Array.from(document.querySelectorAll('input[name="companionItem"]:checked'))
@@ -1122,7 +2020,6 @@
       const endTime = document.getElementById('endTime').value;
       const memo = document.getElementById('bookingMemo').value.trim();
 
-      // 체크된 동행자 + 직접 입력한 동행자 합치기
       const checkedCompanions = Array.from(document.querySelectorAll('input[name="companionItem"]:checked')).map(el => el.value);
       const extraRaw = document.getElementById('extraCompanions').value.trim();
       const extraCompanions = extraRaw ? extraRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -1130,7 +2027,6 @@
 
       const newBooking = { id, date, vehicle, driver, companions, meridiem, startTime, endTime, memo };
 
-      // 동시간대 동일 차량 중복 배차 체크
       const conflict = Object.values(state.bookings || {}).find(b => {
         if (b.id === id || b.date !== date || b.vehicle !== vehicle) return false;
         return (startTime < b.endTime && endTime > b.startTime);
@@ -1165,7 +2061,7 @@
       state.bookings[bookingObj.id] = bookingObj;
       saveToDataSource();
       closeBookingModal();
-      showToast('배차 일정이 저장되었습니다.', 'success');
+      showCarToast('배차 일정이 저장되었습니다.', 'success');
     }
 
     function toggleDeleteConfirm(show) {
@@ -1190,12 +2086,9 @@
       delete state.bookings[id];
       saveToDataSource();
       closeBookingModal();
-      showToast('배차 일정이 삭제되었습니다.');
+      showCarToast('배차 일정이 삭제되었습니다.');
     }
 
-    /********************************************************************
-     * [9] 월별 배차 내역서 조회 / A4 인쇄 / 엑셀(CSV) 다운로드
-     ********************************************************************/
     function getFilteredMonthlyBookings() {
       const year = currentDate.getFullYear();
       const month = String(currentDate.getMonth() + 1).padStart(2, '0');
@@ -1275,14 +2168,13 @@
       modal.classList.remove('flex');
     }
 
-    // 엑셀(CSV, UTF-8 BOM 포함) 파일 다운로드
     function exportMonthlyCSV() {
       const year = currentDate.getFullYear();
       const month = String(currentDate.getMonth() + 1).padStart(2, '0');
       const list = getFilteredMonthlyBookings();
 
       if (list.length === 0) {
-        showToast('출력할 월별 배차 내역이 없습니다.', 'warn');
+        showCarToast('출력할 월별 배차 내역이 없습니다.', 'warn');
         return;
       }
 
@@ -1307,7 +2199,6 @@
         ].map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(',');
       });
 
-      // 한글 깨짐 방지를 위한 UTF-8 BOM(\uFEFF) 추가
       const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -1320,12 +2211,9 @@
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      showToast(`${year}년 ${month}월 배차 내역 엑셀(CSV) 파일이 다운로드되었습니다.`, 'success');
+      showCarToast(`${year}년 ${month}월 배차 내역 엑셀(CSV) 파일이 다운로드되었습니다.`, 'success');
     }
 
-    /********************************************************************
-     * [10] 기타 모달 및 보조 함수
-     ********************************************************************/
     function openGuideModal() {
       const m = document.getElementById('guideModal');
       m.classList.remove('hidden');
@@ -1351,7 +2239,6 @@
         .replace(/'/g, '&#039;');
     }
 
-    // 전역 스코프에 이벤트 핸들러 바인딩
     Object.assign(window, {
       setFontScale,
       addMember, removeMember,
@@ -1368,8 +2255,7 @@
       formatDate
     });
 
-    // 초기 실행
-    setFontScale('large');
+    setFontScale('normal');
     renderAll();
     initDataSync();
   </script>
